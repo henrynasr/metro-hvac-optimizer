@@ -11,8 +11,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
-from utils import load_data, dT_dt, style_axes
+from utils import load_data, style_axes
 from occupancy import load_profiles, build_Q_array
+from regulation import dT_dt, build_Q_hvac_array
 
 
 # ---------------------------------------------------------------------
@@ -20,31 +21,32 @@ from occupancy import load_profiles, build_Q_array
 # ---------------------------------------------------------------------
 
 df = load_data("data/raw/paris_weather.csv").sort_index()
-df_sliced = df.loc["2024-07-01":"2024-07-07"]
+df_sliced = df.loc["2024-08-05":"2024-08-12"]
 
 t_array     = np.arange(len(df_sliced)) * 3600       # seconds
 T_ext_array = df_sliced["temperature_2m"].values     # °C
 dates       = df_sliced.index
 
 profiles = load_profiles("data/raw/Defense_Occupation_Normalised.xlsx")
-Q_array, n_people = build_Q_array(dates, profiles)
-
+Q_array, N_people_array = build_Q_array(dates, profiles)
 
 # ---------------------------------------------------------------------
-# 2. Physics parameters and ODE solve
+# 2. Physics parameters, ODE solve and HVAC contribution
 # ---------------------------------------------------------------------
 
 UA = 5e3       # envelope conductance (W/K)
 C  = 5e7       # lumped thermal capacitance (J/K)
-T0 = [23.0]    # initial indoor temperature (°C)
+T0 = [16.0]    # initial indoor temperature (°C)
 
 sol = solve_ivp(
     fun=dT_dt,
     t_span=(t_array[0], t_array[-1]),
     y0=T0,
     t_eval=t_array,
-    args=(t_array, T_ext_array, Q_array, UA, C),
+    args=(t_array, T_ext_array, Q_array, N_people_array, UA, C),
 )
+
+Q_hvac_array, Q_heat_array, Q_cool_array, Q_vent_array = build_Q_hvac_array(sol.y[0], T_ext_array, N_people_array)
 
 
 # ---------------------------------------------------------------------
@@ -57,23 +59,35 @@ sol = solve_ivp(
 if __name__ == "__main__":
 
     hours = t_array / 3600
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(11, 10), sharex=True)
-
+    fig, axes = plt.subplots(4, 2, figsize=(11, 10), sharex=True)
+    fig.suptitle("Paris station thermal model — Second week of Aug 2024", fontsize = 13)
     # Top panel — outdoor vs indoor temperature
-    ax1.plot(hours, T_ext_array, label="T_ext (outdoor)")
-    ax1.plot(hours, sol.y[0],    label="T_in (indoor)")
-    style_axes(ax1, "Paris station thermal model — first week of July 2024",
-            "", "Temperature (°C)")
-    ax1.legend(fontsize=12)
+    axes[0,0].plot(hours, T_ext_array, label="T_ext (outdoor)")
+    axes[0,0].plot(hours, sol.y[0],    label="T_in (indoor)")
+    style_axes(axes[0,0], "", "", "Temperature (°C)")
+    axes[0,0].legend(fontsize=12)
 
-    # Middle panel — internal heat load
-    ax2.plot(hours, Q_array / 1000, color="tab:orange")
-    style_axes(ax2, "", "", "Q internal (kW)")
+    # Second panel — internal heat load
+    axes[1,0].plot(hours, Q_array / 1000, color="tab:orange")
+    style_axes(axes[1,0], "", "", "Q internal (kW)")
 
-    # Bottom panel — headcount
-    ax3.plot(hours, n_people, color="tab:green")
-    style_axes(ax3, "", "Hours since start", "Headcount (persons)")
+    # Third panel — headcount
+    axes[2,0].plot(hours, N_people_array, color="tab:green")
+    style_axes(axes[2,0], "", "", "Headcount (persons)")
+
+    # Bottom panel — HVAC contribution
+    axes[3,0].plot(hours, Q_hvac_array / 1000, color="tab:blue")
+    style_axes(axes[3,0], "", "Hours since start", "Q_HVAC (KW)")
+
+    axes[0,1].plot(t_array / 3600, Q_heat_array / 1000, color="red")
+    style_axes(axes[0,1], ylabel="Q_heat (kW)")
+
+    axes[1,1].plot(t_array / 3600, Q_cool_array / 1000, color="blue")
+    style_axes(axes[1,1], ylabel="Q_cool (kW)")
+
+    axes[2,1].plot(t_array / 3600, Q_vent_array / 1000, color="grey")
+    style_axes(axes[2,1], ylabel="Q_vent (kW)")
 
     plt.tight_layout()
-    plt.savefig("images/thermal_model.png", dpi=150)
+    plt.savefig("images/thermal_model_aug2024.png", dpi=150)
     plt.close()
