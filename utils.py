@@ -23,24 +23,3 @@ def style_axes(ax, title="", xlabel="", ylabel=""):
     ax.spines["right"].set_visible(False)
 
 
-def dT_dt(t, T, t_array, T_ext_array, Q_array, UA, C):
-    """
-    Slope of indoor temperature at instant t.
-
-    Args:
-        t (float): current time in seconds (since simulation start).
-        T (float): current indoor temperature in °C.
-        t_array (np.ndarray): time grid in seconds, shape (N,).
-        T_ext_array (np.ndarray): outdoor temperature in °C at each
-            point of t_array, shape (N,).
-        Q_array (np.ndarray): internal heat load in W at each point
-            of t_array, shape (N,).
-        UA (float): overall heat transfer coefficient × area, in W/K.
-        C (float): lumped thermal capacitance, in J/K.
-
-    Returns:
-        float: dT/dt in °C/s.
-    """
-    T_ext = np.interp(t, t_array, T_ext_array)
-    Q = np.interp(t, t_array, Q_array)
-    return (UA * (T_ext - T) + Q) / C
