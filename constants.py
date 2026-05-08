@@ -218,6 +218,9 @@ C_TOTAL_J_K          = C_AIR_J_K + C_CONC_J_K
 # The structural mass heats and cools very slowly.
 # The AHU controls air temperature; the structure drifts slowly.
 
+CP_GLYCOL_J_KG_K  = 3800.0   # 30% propylene glycol mix [ASSUMPTION — standard value]
+RHO_GLYCOL_KG_M3  = 1045.0   # 30% propylene glycol mix [ASSUMPTION]
+
 
 # -----------------------------------------------------------------------------
 # 5. OCCUPANCY
@@ -419,3 +422,81 @@ RHO_CP_AIR_J_M3_K   = RHO_AIR_KG_M3 * CP_AIR_J_KG_K
 # 1206 J/(m³·K) — volumetric heat capacity of air
 # Used in infiltration heat flux: Q_inf = RHO_CP_AIR × V̇_inf × (T_tun - T_in)
 # and in HVAC power:              Q_hvac = RHO_CP_AIR × Q_air_m3s × ΔT
+
+# -----------------------------------------------------------------------------
+# 11. WATER REGIME — hot and cold circuit temperatures vs T_ext
+# -----------------------------------------------------------------------------
+# Hot water: 50/45°C supply/return at T_ext = -7°C → 35/30°C at T_ext = 12°C
+# Shut off above 12°C. 2°C hysteresis band (shuts at 12, restarts at 10).
+# Source: Fayat/RATP regulation design (Henry Nasr internship documentation)
+# Cold water: 8/14°C at T_ext = 31°C → 12/18°C at T_ext = 26°C
+# Shut off below 26°C.
+# Source: same
+
+T_HW_EXT_LOW_C   = -7.0    # T_ext anchor for hot water max [°C]
+T_HW_EXT_HIGH_C  = 12.0    # T_ext shutoff for hot water [°C]
+T_HW_EXT_HYST_C  = 10.0    # T_ext restart threshold (hysteresis) [°C]
+T_HW_SUPPLY_MAX  = 50.0    # Hot water supply at T_ext = -7 [°C]
+T_HW_SUPPLY_MIN  = 35.0    # Hot water supply at T_ext = 12 [°C]
+T_HW_RETURN_MAX  = 45.0    # Hot water return at T_ext = -7 [°C]
+T_HW_RETURN_MIN  = 30.0    # Hot water return at T_ext = 12 [°C]
+
+T_CW_EXT_LOW_C   = 26.0    # T_ext shutoff for cold water [°C]
+T_CW_EXT_HIGH_C  = 31.0    # T_ext anchor for cold water max [°C]
+T_CW_EXT_HYST_C = 28.0     # T_ext restart threshold (hysteresis) [°C]
+T_CW_SUPPLY_MIN  = 8.0     # Cold water supply at T_ext = 31 [°C]
+T_CW_SUPPLY_MAX  = 12.0    # Cold water supply at T_ext = 26 [°C]
+T_CW_RETURN_MIN  = 14.0    # Cold water return at T_ext = 31 [°C]
+T_CW_RETURN_MAX  = 18.0    # Cold water return at T_ext = 26 [°C]
+
+DT_WATER_HEAT_K   = T_HW_SUPPLY_MAX - T_HW_RETURN_MAX      # supply−return ΔT = 5 heating circuit [°C] (50/45 or 35/30)
+DT_WATER_COOL_K   = T_CW_RETURN_MIN - T_CW_SUPPLY_MIN     # supply−return ΔT = 6 cooling circuit [°C] (8/14 or 12/18)
+
+# -----------------------------------------------------------------------------
+# 12. AHU AIR MIX — return air fraction
+# -----------------------------------------------------------------------------
+# 70% return air / 30% outdoor air, consistent with high-occupancy subway
+# practice: Seoul SCAP system (PMC 2022, doi:10.3390/ijerph192013302) and
+# Delhi Metro coach design (~73% RA, Indian Express 2020) both operate near
+# this split. No international standard (ASHRAE 62.1, EN 16798-3, NFPA 130)
+# prescribes a numeric cap on RA fraction; OA volume is set by occupancy and
+# IAQ requirements, not by a fixed ratio.
+# Platform air classified as ASHRAE 62.1 Class 2/3 (elevated PM, metallic
+# aerosols) → recirculation within zone is acceptable; no transfer to cleaner
+# spaces. RATP SQUALES network monitors CO₂, PM, RH on platforms but publishes
+# no fixed recirculation setpoint.
+# T_mix = FRAC_RETURN_AIR * T_in + (1 - FRAC_RETURN_AIR) * T_ext
+FRAC_RETURN_AIR  = 0.70    # [-] industry practice for subway AHUs
+
+# -----------------------------------------------------------------------------
+# 13. HUMIDITY TARGETS
+# -----------------------------------------------------------------------------
+# Comfort/IAQ operating band: 40–60% RH.
+#   Sources: ASHRAE 55 (30–60% preferred range to minimise pathogen/allergen
+#   growth); EN ISO 7730 (30–70% band, ~50% used in PMV/PPD calculations);
+#   Delhi Metro ECS design: 27°C / 55% RH for platform/concourse
+#   (ICTRAM 2018 presentation, Scribd).
+#
+# Low alert: 30% RH — below this, dryness and mucosal irritation reported
+#   (ASHRAE 55 lower bound; EN ISO 7730 lower comfort limit).
+#   Trigger: AHU humidifying more than needed, or very dry outdoor air in
+#   winter being under-humidified by the mix.
+#
+# High alert: 70% RH sustained — condensation risk on cold surfaces and
+#   accelerated microbial growth (UCL underground moisture study,
+#   Wei et al., Build. Serv. Eng. 2021; Chinese national guidance 40–70%
+#   for station halls, UCL review 2021).
+#   Trigger: outdoor air too humid in summer → AHU cooling coil must extract
+#   additional latent heat to bring mixed air below target. Dehumidification
+#   load not yet modelled (psychrometric layer, deferred).
+#
+# Structural limit: 80% surface RH, 30-day running average.
+#   Source: ASHRAE 160 mold criterion. Concrete colonisation threshold
+#   ~85–90% RH but 80% used as design margin. Below-ground station
+#   condensation study (openlib.tugraz.at, 2024): tunnel air at 15°C/95%RH
+#   in contact with surfaces at 11.5°C produces condensation.
+RH_TARGET_LOW    = 0.40    # [-] comfort lower bound
+RH_TARGET_HIGH   = 0.60    # [-] comfort upper bound / AHU dehumidification target
+RH_ALERT_LOW     = 0.30    # [-] dryness/irritation threshold (ASHRAE 55)
+RH_ALERT_HIGH    = 0.70    # [-] condensation + microbial risk threshold
+RH_STRUCTURAL    = 0.80    # [-] ASHRAE 160 surface mold criterion (30-day avg)

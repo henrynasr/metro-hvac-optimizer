@@ -70,7 +70,7 @@ T_in_array = sol.y[0]
 T_tun_array  = T_ext_array + T_TUN_OFFSET_C
 
 # Post-hoc HVAC decomposition
-Q_total, Q_heat, Q_cool, Q_vent = build_Q_hvac_array(
+Q_total, Q_heat, Q_cool, Q_vent, Q_water_heat, Q_water_cool, T_hw_arr, T_cw_arr = build_Q_hvac_array(
     T_in_array, T_ext_array, n_array, dates
 )
 

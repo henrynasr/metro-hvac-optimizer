@@ -52,6 +52,14 @@ from constants import (
     T_BLOW_COOL_C,
     # Occupancy
     PEOPLE_PEAK,
+    # Water Regulation
+    T_HW_EXT_LOW_C, T_HW_EXT_HIGH_C, T_HW_EXT_HYST_C,
+    T_HW_SUPPLY_MAX, T_HW_SUPPLY_MIN,
+    T_CW_EXT_LOW_C, T_CW_EXT_HIGH_C, T_CW_EXT_HYST_C,
+    T_CW_SUPPLY_MIN, T_CW_SUPPLY_MAX,
+    FRAC_RETURN_AIR,
+    CP_GLYCOL_J_KG_K, RHO_GLYCOL_KG_M3,
+    DT_WATER_HEAT_K, DT_WATER_COOL_K,
 )
 from occupancy import v_inf_m3s, _day_type
 
@@ -253,8 +261,103 @@ def dT_dt(
     return [dTdt]
 
 
+# =============================================================================
+# SECTION 4 — Water regime: T_water = f(T_ext) + Q_water
+# =============================================================================
+# Hot water circuit: 50°C supply at T_ext = -7°C → 35°C at T_ext = 12°C.
+# Shut off above 12°C. Hysteresis: restarts only when T_ext drops to 10°C.
+# Cold water circuit: 12°C supply at T_ext = 26°C → 8°C at T_ext = 31°C.
+# Shut off below 26°C with 2°C hysteresis (restarts at 28°C).
+# Hysteresis on both circuits prevents short-cycling at boundary conditions —
+# standard practice in HVAC chiller and heat pump control to protect equipment
+# and avoid unrealistic on/off oscillations at threshold temperatures.
+# Source: ASHRAE Handbook — HVAC Systems and Equipment (2020), Ch. 42
+# (Automatic Control), hysteresis/deadband in refrigeration plant control.
+#
+# Q_water sizing equation (coil energy balance):
+#   Q_water_m3s × RHO_GLYCOL × CP_GLYCOL × DT_WATER = Q_air_m3s × RHO_CP_AIR × (T_blow - T_mix)
+# Where:
+#   T_mix = FRAC_RETURN_AIR * T_in + (1 - FRAC_RETURN_AIR) * T_ext
+#   T_blow = T_BLOW_HEAT_C or T_BLOW_COOL_C (fixed design values, unchanged)
+#   DT_WATER = supply - return temperature of the water circuit (constant per regime)
+#
+# This does NOT modify Q_hvac or dT_dt. It is a post-hoc secondary output.
+
+def T_hot_water_supply(T_ext: float, heating_active: bool) -> float | None:
+    """
+    Hot water supply temperature [°C] as a function of outdoor temperature.
+
+    Parameters
+    ----------
+    T_ext : float
+        Outdoor air temperature [°C].
+    heating_active : bool
+        Current state of the heating circuit (for hysteresis logic).
+        True = circuit was on at previous timestep.
+
+    Returns
+    -------
+    float or None
+        Supply water temperature [°C], or None if circuit is shut off.
+
+    Notes
+    -----
+    Hysteresis: circuit shuts off at T_ext >= T_HW_EXT_HIGH_C (12°C),
+    restarts only when T_ext <= T_HW_EXT_HYST_C (10°C).
+    """
+    if heating_active:
+        if T_ext >= T_HW_EXT_HIGH_C:       # shut off
+            return None
+    else:
+        if T_ext > T_HW_EXT_HYST_C:        # stay off until 10°C
+            return None
+
+    return float(np.interp(
+        T_ext,
+        [T_HW_EXT_LOW_C,  T_HW_EXT_HIGH_C],   # x: -7 → 12
+        [T_HW_SUPPLY_MAX, T_HW_SUPPLY_MIN],    # y: 50 → 35
+    ))
+
+
+def T_cold_water_supply(T_ext: float, cooling_active: bool) -> float | None:
+    """
+    Cold water supply temperature [°C] as a function of outdoor temperature.
+
+    Parameters
+    ----------
+    T_ext : float
+        Outdoor air temperature [°C].
+    cooling_active : bool
+        Current state of the cooling circuit (for hysteresis logic).
+        True = circuit was on at previous timestep.
+
+    Returns
+    -------
+    float or None
+        Supply water temperature [°C], or None if circuit is shut off.
+
+    Notes
+    -----
+    Hysteresis: circuit shuts off at T_ext <= T_CW_EXT_LOW_C (26°C),
+    restarts only when T_ext >= T_CW_EXT_HYST_C (28°C).
+    Same 2°C band as heating side — avoids chiller short-cycling at boundary.
+    """
+    if cooling_active:
+        if T_ext <= T_CW_EXT_LOW_C:        # shut off
+            return None
+    else:
+        if T_ext < T_CW_EXT_HYST_C:        # stay off until 28°C
+            return None
+
+    return float(np.interp(
+        T_ext,
+        [T_CW_EXT_LOW_C,  T_CW_EXT_HIGH_C],   # x: 26 → 31
+        [T_CW_SUPPLY_MAX, T_CW_SUPPLY_MIN],    # y: 12 → 8
+    ))
+
+
 # -----------------------------------------------------------------------------
-# SECTION 4 — Post-hoc HVAC decomposition (for plotting only)
+# SECTION 5 — Post-hoc HVAC decomposition (for plotting only)
 # -----------------------------------------------------------------------------
 # Reconstructs Q_heat, Q_cool, Q_vent from stored T_in and T_ext arrays.
 # DO NOT call from inside dT_dt — that would be O(N²).
@@ -279,13 +382,26 @@ def build_Q_hvac_array(
     Returns
     -------
     Q_hvac_total, Q_heat, Q_cool, Q_vent : np.ndarray [W]
-        Mutually exclusive. Q_heat < 0 (adds heat), Q_cool > 0 (removes heat).
+        Mutually exclusive thermal power terms. Unchanged from S11.
+    Q_water_heat, Q_water_cool : np.ndarray [m³/s]
+        Water volumetric flow rate required to deliver T_blow at each timestep.
+        Zero when circuit is off.
+    T_hw_supply, T_cw_supply : np.ndarray [°C]
+        Water supply temperatures. np.nan when circuit is off.
     """
     n = len(T_in_array)
-    Q_total = np.zeros(n)
-    Q_heat  = np.zeros(n)
-    Q_cool  = np.zeros(n)
-    Q_vent  = np.zeros(n)
+    Q_total      = np.zeros(n)
+    Q_heat       = np.zeros(n)
+    Q_cool       = np.zeros(n)
+    Q_vent       = np.zeros(n)
+    Q_water_heat = np.zeros(n)
+    Q_water_cool = np.zeros(n)
+    T_hw_arr     = np.full(n, np.nan)
+    T_cw_arr     = np.full(n, np.nan)
+
+    # Hysteresis state — starts assuming circuits are off
+    heating_active = False
+    cooling_active = False
 
     for i, (T_in, T_ext, n_ppl, ts) in enumerate(
             zip(T_in_array, T_ext_array, n_people_array, dates)):
@@ -294,24 +410,58 @@ def build_Q_hvac_array(
         Q_air_m3h = airflow_total(n_ppl)
         Q_air_m3s = Q_air_m3h / 3600.0
 
+       # Mixed air temperature entering the AHU coil
+        # 70% return air (T_in) + 30% fresh air (T_ext)
+        # Source: industry practice for subway AHUs — Seoul SCAP (PMC 2022),
+        # Delhi Metro (~73% RA). No standard caps RA fraction.
+        T_mix = FRAC_RETURN_AIR * T_in + (1.0 - FRAC_RETURN_AIR) * T_ext
+
+        # --- Water circuit state (hysteresis) ---
+        T_hw = T_hot_water_supply(T_ext, heating_active)
+        T_cw = T_cold_water_supply(T_ext, cooling_active)
+        heating_active = T_hw is not None
+        cooling_active = T_cw is not None
+
+        if T_hw is not None:
+            T_hw_arr[i] = T_hw
+        if T_cw is not None:
+            T_cw_arr[i] = T_cw
+
+        # --- HVAC power (unchanged logic) ---
         if np.isnan(T_set):
-            # Dead band: ventilation only, supply air ≈ T_ext
             q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
             Q_vent[i]  = q
             Q_total[i] = q
+
         else:
-            if T_set > T_in:
-                # Heating needed: blow hot air
+            if T_set > T_ext:                    # heating needed
                 T_blow = T_BLOW_HEAT_C
-                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_blow)  # negative
-                q = q if T_in < T_set else 0.0   # shut off if already warm enough
+                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_blow)
+                q = q if T_in < T_set else 0.0
                 Q_heat[i]  = q
-            else:
-                # Cooling needed: blow cold air
+
+                # Q_water: coil must heat T_mix → T_blow
+                if heating_active and q != 0.0:
+                    dT_air = T_blow - T_mix    # > 0 (blowing hotter than mix)
+                    Q_water_heat[i] = (
+                        Q_air_m3s * RHO_CP_AIR_J_M3_K * dT_air
+                        / (RHO_GLYCOL_KG_M3 * CP_GLYCOL_J_KG_K * DT_WATER_HEAT_K)
+                    )
+
+            else:                               # cooling needed
                 T_blow = T_BLOW_COOL_C
-                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_blow)  # positive
-                q = q if T_in > T_set else 0.0   # shut off if already cool enough
+                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_blow)
+                q = q if T_in > T_set else 0.0
                 Q_cool[i]  = q
+
+                # Q_water: coil must cool T_mix → T_blow
+                if cooling_active and q != 0.0:
+                    dT_air = T_mix - T_blow    # > 0 (blowing colder than mix)
+                    Q_water_cool[i] = (
+                        Q_air_m3s * RHO_CP_AIR_J_M3_K * dT_air
+                        / (RHO_GLYCOL_KG_M3 * CP_GLYCOL_J_KG_K * DT_WATER_COOL_K)
+                    )
+
             Q_total[i] = q
 
-    return Q_total, Q_heat, Q_cool, Q_vent
+    return Q_total, Q_heat, Q_cool, Q_vent, Q_water_heat, Q_water_cool, T_hw_arr, T_cw_arr
