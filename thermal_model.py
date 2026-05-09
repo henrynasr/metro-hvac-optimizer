@@ -54,12 +54,14 @@ Q_int_array, n_array  = build_Q_array(dates, profiles)
 # SECTION 2 — ODE solve
 # -----------------------------------------------------------------------------
 
+water_state = {"heating": False, "cooling": False}
+
 sol = solve_ivp(
     fun=dT_dt,
     t_span=(t_array[0], t_array[-1]),
     y0=[T0],
     t_eval=t_array,
-    args=(t_array, T_ext_array, Q_int_array, n_array, dates),
+    args=(t_array, T_ext_array, Q_int_array, n_array, dates, water_state),
     method="RK45",
     max_step=3600.0,
 )

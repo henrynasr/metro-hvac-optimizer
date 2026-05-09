@@ -177,6 +177,7 @@ def dT_dt(
     Q_int_array: np.ndarray,
     n_people_array: np.ndarray,
     dates: pd.DatetimeIndex,
+    water_state: dict,
 ) -> list:
     """
     ODE slope function for the lumped-capacitance platform thermal model.
@@ -197,6 +198,8 @@ def dT_dt(
         Headcount [persons] at each timestep.
     dates : pd.DatetimeIndex
         Datetime index corresponding to t_array (for day-type dispatch).
+    water_state = {"heating": False, "cooling": False}
+        mutable dict — changes persist across calls
 
     Returns
     -------
@@ -235,6 +238,11 @@ def dT_dt(
     Q_air_m3h = airflow_total(n_ppl)
     Q_air_m3s = Q_air_m3h / 3600.0
 
+    T_hw = T_hot_water_supply(T_ext, water_state["heating"])
+    T_cw = T_cold_water_supply(T_ext, water_state["cooling"])
+    water_state["heating"] = T_hw is not None
+    water_state["cooling"] = T_cw is not None
+
     if np.isnan(T_set):
         # Dead band: no active thermal control.
         # AHU blows outdoor air at ~T_ext into the zone.
@@ -247,12 +255,12 @@ def dT_dt(
         if T_set > T_in:   # heating needed
             T_blow = T_BLOW_HEAT_C
             Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_blow)
-            if T_in >= T_set:  # already warm enough, shut off
+            if T_in >= T_set or not water_state["heating"]:  # already warm enough, shut off
                 Q_hvac = 0.0
         else:              # cooling needed
             T_blow = T_BLOW_COOL_C
             Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_blow)
-            if T_in <= T_set:  # already cool enough, shut off
+            if T_in <= T_set or not water_state["cooling"]:  # already cool enough, shut off
                 Q_hvac = 0.0
 
     # --- ODE ---
@@ -434,10 +442,10 @@ def build_Q_hvac_array(
             Q_total[i] = q
 
         else:
-            if T_set > T_ext:                    # heating needed
+            if T_set > T_in:                    # heating needed
                 T_blow = T_BLOW_HEAT_C
                 q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_blow)
-                q = q if T_in < T_set else 0.0
+                q = q if (T_in < T_set and heating_active) else 0.0
                 Q_heat[i]  = q
 
                 # Q_water: coil must heat T_mix → T_blow
@@ -451,7 +459,7 @@ def build_Q_hvac_array(
             else:                               # cooling needed
                 T_blow = T_BLOW_COOL_C
                 q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_blow)
-                q = q if T_in > T_set else 0.0
+                q = q if (T_in > T_set and cooling_active) else 0.0
                 Q_cool[i]  = q
 
                 # Q_water: coil must cool T_mix → T_blow
