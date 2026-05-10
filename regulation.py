@@ -13,8 +13,11 @@ from constants import (
     C_TOTAL_J_K,
     AIRFLOW_MIN_M3H, AIRFLOW_MAX_M3H, AIRFLOW_PER_PERSON_M3H, AIRFLOW_OVERPRESSURE_M3H,
     Q_STAIR_M3S,
-    T_ANTIFREEZE_C, T_HEAT_FIXED_C, T_DEAD_LOW_C, T_DEAD_HIGH_C, T_COOL_FIXED_C,
-    T_COOL_DELTA_C, T_BLOW_HEAT_C, T_BLOW_COOL_C, T_EXT_ANTIFREEZE_C,
+    T_EXT_HEAT_LOW_C, T_HEAT_LOW_C, T_HEAT_HIGH_C,
+    T_DEAD_LOW_C, T_DEAD_HIGH_C,
+    T_COOL_FIXED_C, T_COOL_DELTA_C, T_COOL_CAP_C, T_EXT_DELTA_C,
+    T_IN_HIGH_LIMIT_C,
+    T_BLOW_HEAT_C, T_BLOW_COOL_C,
     PEOPLE_PEAK,
     T_HW_EXT_LOW_C, T_HW_EXT_HIGH_C, T_HW_EXT_HYST_C, T_HW_SUPPLY_MAX, T_HW_SUPPLY_MIN,
     T_CW_EXT_LOW_C, T_CW_EXT_HIGH_C, T_CW_EXT_HYST_C, T_CW_SUPPLY_MIN, T_CW_SUPPLY_MAX,
@@ -27,29 +30,34 @@ from occupancy import v_inf_m3s, _day_type
 # 1. SETPOINT LAW  T_set = f(T_ext)
 # -----------------------------------------------------------------------------
 # region notes
-# T_ext < T_DEAD_LOW  (15°C) → heating target 21°C (or anti-freeze floor 5°C)
-# T_DEAD_LOW ≤ T_ext ≤ T_DEAD_HIGH (20°C) → dead band, NaN
-# T_ext > T_DEAD_HIGH → cooling target = T_ext - T_COOL_DELTA (6°C gap)
+# 5-zone outdoor compensation:
+#   T_ext ≤  5°C       → 18°C
+#   5 < T_ext < 15°C   → 18–20°C (linear)
+#   15 ≤ T_ext ≤ 22°C  → dead band (NaN)
+#   22 < T_ext ≤ 32°C  → 26°C
+#   T_ext > 32°C       → min(27, T_ext − 6)
+# High-limit override handled separately in dT_dt (not here).
 # endregion
 
 def T_setpoint(T_ext: float) -> float:
     """T_set [°C] from T_ext [°C]. Returns np.nan in dead band."""
-    if T_ext < T_EXT_ANTIFREEZE_C:
-        return T_ANTIFREEZE_C       # 5°C
+    if T_ext <= T_EXT_HEAT_LOW_C:
+        return T_HEAT_LOW_C                        # 18°C
     elif T_ext < T_DEAD_LOW_C:
-        return T_HEAT_FIXED_C       # 15°C, 
+        return float(np.interp(T_ext,
+            [T_EXT_HEAT_LOW_C, T_DEAD_LOW_C],
+            [T_HEAT_LOW_C, T_HEAT_HIGH_C]))        # 18→20°C linear
     elif T_ext <= T_DEAD_HIGH_C:
-        return np.nan
-    elif T_ext <= T_DEAD_HIGH_C + T_COOL_DELTA_C:
-        return T_COOL_FIXED_C       # 26°C
+        return np.nan                               # dead band
+    elif T_ext <= T_EXT_DELTA_C:
+        return T_COOL_FIXED_C                       # 26°C
     else:
-        return T_ext - T_COOL_DELTA_C             # e.g. 34°C when T_ext=40
+        return min(T_COOL_CAP_C, T_ext - T_COOL_DELTA_C)  # min(27, T_ext-6)
 
 
 # -----------------------------------------------------------------------------
 # 2. AIRFLOW  Q_air = f(n_people)
 # -----------------------------------------------------------------------------
-# Q = overpressure + hygiene per person, clipped [MIN, MAX]
 
 def airflow_total(n_people: float) -> float:
     """Total AHU airflow [m³/h] for current headcount."""
@@ -65,12 +73,12 @@ def airflow_total(n_people: float) -> float:
 # C·dT/dt = (UA_facade + UA_tun_wall + ρcp·V_inf)·(T_tun - T)
 #          + UA_soil·(T_soil - T)
 #          + Q_int
-#          + ρcp·Q_stair·(T_ext - T)   ← staircase passive infiltration
+#          + ρcp·Q_stair·(T_ext - T)
 #          - Q_hvac
 #
 # T_tun = T_ext + offset (10°C day / 5°C night)
 # Q_hvac positive = heat removed from zone
-# Dead band: Q_hvac = 0, AHU runs at min airflow, stair term still active
+# Dead band: Q_hvac = 0, unless T_in > T_IN_HIGH_LIMIT (high-limit override)
 # endregion
 
 def dT_dt(
@@ -119,7 +127,11 @@ def dT_dt(
     water_state["cooling"] = T_cw is not None
 
     if np.isnan(T_set):
-        Q_hvac = 0.0   # dead band — AHU runs but no thermal load target
+        # Dead band — but check high-limit override
+        if T_in > T_IN_HIGH_LIMIT_C and water_state["cooling"]:
+            Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_COOL_C)
+        else:
+            Q_hvac = 0.0
     elif T_set > T_in:
         Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_HEAT_C)
         if not water_state["heating"]:
@@ -137,9 +149,9 @@ def dT_dt(
 # 4. WATER REGIME  T_water = f(T_ext)
 # -----------------------------------------------------------------------------
 # region notes
-# Hot:  50→35°C supply over T_ext -7→12°C. Off above 12°C, restarts at 10°C.
-# Cold: 12→8°C supply over T_ext 26→31°C. Off below 26°C, restarts at 28°C.
-# Hysteresis prevents short-cycling. Post-hoc only — does not affect dT_dt.
+# Hot:  50→35°C supply over T_ext -7→15°C. Off above 15°C, restarts at 13°C.
+# Cold: 12→8°C supply over T_ext 26→31°C. Off below 26°C, restarts at 27°C.
+# Hysteresis prevents short-cycling.
 # endregion
 
 def T_hot_water_supply(T_ext: float, heating_active: bool) -> float | None:
@@ -178,12 +190,13 @@ def build_Q_hvac_array(
     n_people_array: np.ndarray,
     dates: pd.DatetimeIndex,
 ) -> tuple:
-    """Decompose HVAC into Q_heat, Q_cool, Q_vent + water flows. Returns 8 arrays."""
+    """
+    Decompose HVAC into Q_heat, Q_cool, Q_vent + water flows.
+    Returns: (Q_total, Q_heat, Q_cool, Q_vent,
+              Q_water_heat, Q_water_cool, T_hw_arr, T_cw_arr,
+              Q_air_m3s_arr)
+    """
     n = len(T_in_array)
-    Q_total = Q_heat = Q_cool = Q_vent = np.zeros(n)
-    Q_water_heat = Q_water_cool = np.zeros(n)
-    T_hw_arr = T_cw_arr = np.full(n, np.nan)
-
     Q_total      = np.zeros(n)
     Q_heat       = np.zeros(n)
     Q_cool       = np.zeros(n)
@@ -192,6 +205,7 @@ def build_Q_hvac_array(
     Q_water_cool = np.zeros(n)
     T_hw_arr     = np.full(n, np.nan)
     T_cw_arr     = np.full(n, np.nan)
+    Q_air_m3s_arr = np.zeros(n)
 
     heating_active = False
     cooling_active = False
@@ -201,6 +215,7 @@ def build_Q_hvac_array(
 
         T_set     = T_setpoint(T_ext)
         Q_air_m3s = airflow_total(n_ppl) / 3600.0
+        Q_air_m3s_arr[i] = Q_air_m3s
         T_mix     = FRAC_RETURN_AIR * T_in + (1.0 - FRAC_RETURN_AIR) * T_ext
 
         T_hw = T_hot_water_supply(T_ext, heating_active)
@@ -212,8 +227,16 @@ def build_Q_hvac_array(
         if T_cw is not None: T_cw_arr[i] = T_cw
 
         if np.isnan(T_set):
-            q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
-            Q_vent[i] = Q_total[i] = q
+            # Dead band — check high-limit override
+            if T_in > T_IN_HIGH_LIMIT_C and cooling_active:
+                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_COOL_C)
+                Q_cool[i] = Q_total[i] = q
+                if q != 0.0:
+                    Q_water_cool[i] = (Q_air_m3s * RHO_CP_AIR_J_M3_K * (T_mix - T_BLOW_COOL_C)
+                                       / (RHO_GLYCOL_KG_M3 * CP_GLYCOL_J_KG_K * DT_WATER_COOL_K))
+            else:
+                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
+                Q_vent[i] = Q_total[i] = q
 
         elif T_set > T_in:
             q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_HEAT_C)
@@ -230,4 +253,6 @@ def build_Q_hvac_array(
                 Q_water_cool[i] = (Q_air_m3s * RHO_CP_AIR_J_M3_K * (T_mix - T_BLOW_COOL_C)
                                    / (RHO_GLYCOL_KG_M3 * CP_GLYCOL_J_KG_K * DT_WATER_COOL_K))
 
-    return Q_total, Q_heat, Q_cool, Q_vent, Q_water_heat, Q_water_cool, T_hw_arr, T_cw_arr
+    return (Q_total, Q_heat, Q_cool, Q_vent,
+            Q_water_heat, Q_water_cool, T_hw_arr, T_cw_arr,
+            Q_air_m3s_arr)
