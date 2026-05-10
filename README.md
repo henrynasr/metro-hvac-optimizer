@@ -50,7 +50,8 @@ where `T_mix = 0.7·T_in + 0.3·T_ext` (70% return air, industry practice).
 | `regulation.py` | `T_setpoint`, `airflow_total`, `dT_dt`, `build_Q_hvac_array`, water regime |
 | `thermal_model.py` | Single-run simulation, 4×2 panel plot |
 | `sweep.py` | 2D parameter sweep — pending update to new ODE |
-| `sobol.py` | 6-parameter Sobol GSA via SALib — pending update to new ODE |
+| `sobol_A.py` | Sobol A (28 params) + C (5 params) GSA via SALib. Self-contained parametric ODE. |
+| `sobol_B.py` | Sobol B — water regime sensitivity. Post-hoc, no ODE per row. |
 | `utils.py` | `load_data`, `style_axes` |
 | `docs/parameters.md` | Full parameter table — sources, derivations, Sobol priority flags |
 
@@ -81,3 +82,5 @@ python thermal_model.py
 ## Status
 
 **Week 2, Session 12.** Water regime layer complete: `T_hot_water_supply(T_ext)` and `T_cold_water_supply(T_ext)` with 2°C hysteresis on both circuits. Q_water post-hoc output added to `build_Q_hvac_array`. T_mix (70/30 return/fresh air mix) integrated. Water circuit availability check added to both `dT_dt` and `build_Q_hvac_array` — HVAC power correctly zeroed when circuit is off. Next: update `sweep.py` and `sobol.py` to new split ODE, re-run Sobol on new parameter set (T_tun offset, η, U_facade, U_soil).
+
+**Week 2, Session 13.** Sobol GSA complete. Three runs: A (28 params, screen), C (5 survivors, N=1024), B (water regime, post-hoc). Key finding: T_TUN_OFFSET and D_CONC_EFF dominate thermal comfort; T_CW_EXT_HYST dominates water energy cost. Geometry confirmed irrelevant. Next: winter validation, then scenario analysis.
