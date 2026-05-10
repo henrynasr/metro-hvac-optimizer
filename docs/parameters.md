@@ -301,4 +301,16 @@ When outdoor air exceeds 60% RH, the AHU cooling coil must extract latent heat i
 
 ---
 
+## 13. Emissions & Cost
+
+| Parameter | Value | Unit | Source |
+|---|---|---|---|
+| COP_COOL | 5.5 | — | Water-cooled chiller, modern metro. ASHRAE 90.1 + Chinese subway field data (avg 4.4, optimised 6.1). [SOBOL 4.0–6.5] |
+| COP_HEAT | 4.0 | — | Water-water heat pump, 50°C supply. EN 14511 datasheet range 3.5–5.5. [SOBOL 3.0–5.5] |
+| ETA_FAN | 0.60 | — | Fan + motor + VFD combined. REHVA field avg 33%, modern direct-drive 55–70%. [SOBOL 0.40–0.70] |
+| DP_AHU_PA | 800 | Pa | Total static pressure, AHU + ducts. REHVA/ErP band 600–1000 Pa modern, 900–1300 Pa legacy. [SOBOL 500–1200] |
+| ELEC_PRICE | 0.17 | €/kWh | RATP industrial tariff [ASSUMPTION] |
+
+**CO₂ intensity:** RTE éCO2mix 2024, `Taux de Co2` column, 30-min resolution, aligned to hourly simulation by nearest-neighbour reindex. Range: 7–69 gCO₂/kWh (French nuclear grid).
+
 *Public data only.*

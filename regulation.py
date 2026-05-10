@@ -13,8 +13,8 @@ from constants import (
     C_TOTAL_J_K,
     AIRFLOW_MIN_M3H, AIRFLOW_MAX_M3H, AIRFLOW_PER_PERSON_M3H, AIRFLOW_OVERPRESSURE_M3H,
     Q_STAIR_M3S,
-    T_ANTIFREEZE_C, T_HEAT_FIXED_C, T_DEAD_LOW_C, T_DEAD_HIGH_C,
-    T_COOL_DELTA_C, T_BLOW_HEAT_C, T_BLOW_COOL_C,
+    T_ANTIFREEZE_C, T_HEAT_FIXED_C, T_DEAD_LOW_C, T_DEAD_HIGH_C, T_COOL_FIXED_C,
+    T_COOL_DELTA_C, T_BLOW_HEAT_C, T_BLOW_COOL_C, T_EXT_ANTIFREEZE_C,
     PEOPLE_PEAK,
     T_HW_EXT_LOW_C, T_HW_EXT_HIGH_C, T_HW_EXT_HYST_C, T_HW_SUPPLY_MAX, T_HW_SUPPLY_MIN,
     T_CW_EXT_LOW_C, T_CW_EXT_HIGH_C, T_CW_EXT_HYST_C, T_CW_SUPPLY_MIN, T_CW_SUPPLY_MAX,
@@ -34,12 +34,16 @@ from occupancy import v_inf_m3s, _day_type
 
 def T_setpoint(T_ext: float) -> float:
     """T_set [°C] from T_ext [°C]. Returns np.nan in dead band."""
-    if T_ext < T_DEAD_LOW_C:
-        return max(T_HEAT_FIXED_C, T_ANTIFREEZE_C)   # 21°C, floored at 5°C
+    if T_ext < T_EXT_ANTIFREEZE_C:
+        return T_ANTIFREEZE_C       # 5°C
+    elif T_ext < T_DEAD_LOW_C:
+        return T_HEAT_FIXED_C       # 15°C, 
     elif T_ext <= T_DEAD_HIGH_C:
         return np.nan
+    elif T_ext <= T_DEAD_HIGH_C + T_COOL_DELTA_C:
+        return T_COOL_FIXED_C       # 26°C
     else:
-        return T_ext - T_COOL_DELTA_C                 # e.g. 34°C when T_ext=40
+        return T_ext - T_COOL_DELTA_C             # e.g. 34°C when T_ext=40
 
 
 # -----------------------------------------------------------------------------

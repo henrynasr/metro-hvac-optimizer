@@ -31,12 +31,12 @@ C · dT_in/dt = (UA_facade + UA_tun_wall + ρcp·V̇_inf)·(T_tun − T_in)
 
 - T_ext < 15°C → heat to 21°C
 - 15°C ≤ T_ext ≤ 20°C → dead band (ventilation only)
-- T_ext > 20°C → cool to T_ext − 6°C (e.g. 34°C when T_ext = 40°C)
+- - T_ext > 20°C → cool to 26°C fixed target (up to T_ext = 32°C), then T_ext − 6°C above 32°C
 
 **Water regime:**
 
 Hot circuit: 50→35°C supply over T_ext −7→12°C. Off above 12°C (restarts at 10°C).
-Cold circuit: 12→8°C supply over T_ext 26→31°C. Off below 26°C (restarts at 28°C).
+Cold circuit: 12→8°C supply over T_ext 26→31°C. Off below 26°C (restarts at 27°C).
 `Q_water = Q_air × ρcp_air × dT_air / (ρ_glycol × Cp_glycol × ΔT_water)` where `T_mix = 0.7·T_in + 0.3·T_ext`.
 
 ---
@@ -61,6 +61,7 @@ Cold circuit: 12→8°C supply over T_ext 26→31°C. Off below 26°C (restarts 
 | `sobol_B.py` | Sobol B — water regime sensitivity, post-hoc (no ODE per row). August week. |
 | `utils.py` | `load_data`, `style_axes` |
 | `docs/parameters.md` | Full parameter table — values, sources, derivations, Sobol ranges |
+| `emissions.py` | Electricity, CO₂, cost — post-hoc from Q arrays + RTE éCO2mix |
 
 ---
 
@@ -104,3 +105,13 @@ python thermal_model.py
 - Parameters: BASELINE_W 5000→500W (corridor only). T_COOL_FIXED replaced by T_COOL_DELTA=6°C.
 - Sobol A/B/C rerun on updated model. All files cleaned — jargon moved to parameters.md, inline comments only in code.
 - Next (new laptop): Sobol C rerun at N=1024, sweep on D_CONC_EFF × T_TUN_OFFSET_DAY, CO₂ emissions layer, psychrometric layer, Pareto front.
+
+## Status
+
+**Week 3, Session 15.** Emissions layer added:
+- Simulation extended to full year 2024 (continuous ODE run, 8784 timesteps).
+- `emissions.py`: fan power (Q×ΔP/η), COP conversion, timestep CO₂ multiply against RTE éCO2mix real grid intensity.
+- Setpoint law fixed: fixed 26°C target for T_ext 20–32°C, T_ext−6°C above 32°C.
+- Cold water hysteresis corrected: off at 26°C, restarts at 27°C.
+- Annual results (2024, one platform side): E=17,831 kWh, CO₂=348 kgCO₂, cost=3,031€. Fans = 74% of bill.
+- Next: emissions plot (monthly stacked bar), psychrometric layer, Pareto front.

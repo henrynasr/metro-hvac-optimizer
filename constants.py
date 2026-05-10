@@ -115,10 +115,12 @@ AIRFLOW_MAX_M3H = (AIRFLOW_OVERPRESSURE_M3H + PEOPLE_PEAK * AIRFLOW_PER_PERSON_M
 # 9. REGULATION SETPOINTS
 # -----------------------------------------------------------------------------
 
+T_EXT_ANTIFREEZE_C   =  0.0    # °C — anti-freeze mode on
 T_ANTIFREEZE_C       =  5.0    # °C — anti-freeze floor
-T_HEAT_FIXED_C       = 21.0    # °C — heating target (T_ext < T_DEAD_LOW). Source: metro platform comfort studies.
+T_HEAT_FIXED_C       = 15.0    # °C — heating target (T_ext < T_DEAD_LOW). Source: metro platform comfort studies.
 T_DEAD_LOW_C         = 15.0    # °C — dead band lower boundary (T_ext)
-T_DEAD_HIGH_C        = 20.0    # °C — dead band upper boundary (T_ext)
+T_DEAD_HIGH_C        = 26.0    # °C — dead band upper boundary (T_ext)
+T_COOL_FIXED_C       = 26.0    # °C — cooling target (T_ext > T_DEAD_HIGH). Source: metro platform comfort studies.
 T_COOL_DELTA_C       =  6.0    # °C — cooling target = T_ext - 6 (e.g. 34°C when T_ext=40). [SOBOL 4–8]
 T_BLOW_COOL_C        = 15.0    # °C — AHU supply, cooling mode. [ASSUMPTION] [SOBOL 13–17]
 T_BLOW_HEAT_C        = 30.0    # °C — AHU supply, heating mode. [ASSUMPTION] [SOBOL 28–35]
@@ -135,8 +137,8 @@ RHO_CP_AIR_J_M3_K    = RHO_AIR_KG_M3 * CP_AIR_J_KG_K  # 1206 J/(m³·K)
 # -----------------------------------------------------------------------------
 
 T_HW_EXT_LOW_C       = -7.0    # °C — T_ext anchor, hot water max supply
-T_HW_EXT_HIGH_C      = 12.0    # °C — hot water shutoff
-T_HW_EXT_HYST_C      = 10.0    # °C — hot water restart threshold
+T_HW_EXT_HIGH_C      = 15.0    # °C — hot water shutoff
+T_HW_EXT_HYST_C      = 13.0    # °C — hot water restart threshold
 T_HW_SUPPLY_MAX      = 50.0    # °C — hot water supply at T_ext = -7
 T_HW_SUPPLY_MIN      = 35.0    # °C — hot water supply at T_ext = 12
 T_HW_RETURN_MAX      = 45.0    # °C
@@ -144,7 +146,7 @@ T_HW_RETURN_MIN      = 30.0    # °C
 
 T_CW_EXT_LOW_C       = 26.0    # °C — cold water shutoff
 T_CW_EXT_HIGH_C      = 31.0    # °C — T_ext anchor, cold water min supply
-T_CW_EXT_HYST_C      = 28.0    # °C — cold water restart threshold
+T_CW_EXT_HYST_C      = 27.0    # °C — cold water restart threshold
 T_CW_SUPPLY_MIN      =  8.0    # °C — cold water supply at T_ext = 31
 T_CW_SUPPLY_MAX      = 12.0    # °C — cold water supply at T_ext = 26
 T_CW_RETURN_MIN      = 14.0    # °C
@@ -168,3 +170,13 @@ RH_TARGET_HIGH       = 0.60    # — comfort upper bound / dehumidification targ
 RH_ALERT_LOW         = 0.30    # — dryness alert
 RH_ALERT_HIGH        = 0.70    # — condensation risk threshold
 RH_STRUCTURAL        = 0.80    # — ASHRAE 160 mold criterion, 30-day avg
+
+# -----------------------------------------------------------------------------
+# 14. Emissions 
+# -----------------------------------------------------------------------------
+
+COP_COOL  = 5.5   # water-cooled chiller             [SOBOL 4.0–6.5]
+COP_HEAT  = 4.0   # water-water heat pump, 50°C supply [SOBOL 3.0–5.5]
+ETA_FAN   = 0.60  # fan + motor + VFD combined        [SOBOL 0.40–0.70]
+DP_AHU_PA = 800   # total static pressure, AHU+ducts  [SOBOL 500–1200]
+ELEC_PRICE_EUR_KWH = 0.17   # €/kWh — RATP industrial tariff [ASSUMPTION]

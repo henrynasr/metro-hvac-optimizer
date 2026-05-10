@@ -13,18 +13,19 @@ from constants import (
     C_TOTAL_J_K, T_SOIL_C,
     T_TUN_OFFSET_DAY_C, T_TUN_OFFSET_NIGHT_C,
     UA_FACADE_W_K, UA_TUN_WALL_W_K, UA_SOIL_W_K, RHO_CP_AIR_J_M3_K,
-    Q_STAIR_M3S,
+    Q_STAIR_M3S, AIRFLOW_MAX_M3H
 )
 from occupancy import load_profiles, build_Q_array
 from regulation import T_setpoint, airflow_total, dT_dt, build_Q_hvac_array
 from utils import load_data, style_axes
+from emissions import load_co2_intensity, compute_emissions
 
 # -----------------------------------------------------------------------------
 # 1. INPUTS
 # -----------------------------------------------------------------------------
 
-SIM_START   = "2024-01-07"
-SIM_END     = "2024-01-14"
+SIM_START   = "2024-01-01"
+SIM_END     = "2024-12-31"
 XLSX_PATH   = "data/raw/Defense_Occupation_Normalised.xlsx"
 WEATHER_CSV = "data/raw/paris_weather.csv"
 T0          = 25.0   # °C — initial T_in
@@ -67,13 +68,20 @@ Q_total, Q_heat, Q_cool, Q_vent, Q_water_heat, Q_water_cool, T_hw_arr, T_cw_arr 
     T_in_array, T_ext_array, n_array, dates
 )
 
+RTE_PATH = "data/raw/eco2mix_2024.csv"
+
+Q_air_m3s = AIRFLOW_MAX_M3H / 3600.0  # design flow for fan power calc
+
+co2_intensity = load_co2_intensity(RTE_PATH, dates)
+em = compute_emissions(Q_heat, Q_cool, Q_vent, Q_air_m3s, dates, co2_intensity)
+
 # -----------------------------------------------------------------------------
 # 3. PLOT (4×2 panel)
 # -----------------------------------------------------------------------------
 
 fig, axes = plt.subplots(4, 2, figsize=(16, 14), sharex=True)
 fig.suptitle(
-    f"Thermal model — Platform zone, {SIM_START} to {SIM_END}\n"
+    f"Thermal model — Platform zone, full year 2024\n"
     f"facade→T_tun | concrete→T_soil | stair infiltration | AHU regulation",
     fontsize=13, y=0.98
 )
@@ -149,7 +157,7 @@ ax_note.text(0.05, 0.95, "\n".join(lines), transform=ax_note.transAxes,
              bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8))
 
 plt.tight_layout(rect=[0, 0, 1, 0.96])
-plt.savefig("images/thermal_model_jan24.png", dpi=150)
+plt.savefig("images/thermal_model_2024.png", dpi=150)
 plt.close()
 
 print(f"Saved: images/thermal_model.png")
@@ -159,3 +167,31 @@ print(f"T_ext: {T_ext_array.min():.1f}–{T_ext_array.max():.1f} °C")
 print(f"Q_int: {Q_int_array.min()/1e3:.1f}–{Q_int_array.max()/1e3:.1f} kW")
 print(f"Q_hvac: {Q_total.min()/1e3:.1f}–{Q_total.max()/1e3:.1f} kW")
 print(f"Steady-state T_eq (no HVAC): {T_eq_approx:.1f} °C")
+
+print(f"\n=== Annual Energy & Emissions ===")
+print(f"E_heating : {em['E_heat_total_kWh']:>8.0f} kWh")
+print(f"E_cooling : {em['E_cool_total_kWh']:>8.0f} kWh")
+print(f"E_fans    : {em['E_fan_total_kWh']:>8.0f} kWh")
+print(f"E_TOTAL   : {em['E_annual_kWh']:>8.0f} kWh")
+print(f"CO2_TOTAL : {em['CO2_annual_kgCO2']:>8.0f} kgCO₂")
+
+# Monthly energy breakdown
+monthly = pd.DataFrame({
+    "E_heat_kWh":  em["E_heat_kWh"],
+    "E_cool_kWh":  em["E_cool_kWh"],
+    "E_fan_kWh":   em["E_fan_kWh"],
+    "CO2_total_kg": em["CO2_total_kg"],
+    "intensity":   co2_intensity,
+}, index=dates)
+
+monthly_sum = monthly.resample("ME").sum()
+monthly_sum["intensity_mean"] = monthly.resample("ME")["intensity"].mean()
+
+print("\n=== Monthly breakdown ===")
+print(monthly_sum[["E_heat_kWh","E_cool_kWh","E_fan_kWh","CO2_total_kg", "intensity_mean"]].round(0).to_string())
+
+print(f"\n=== Annual Cost ===")
+print(f"Heating : {em['cost_heat_eur']:>8.0f} €")
+print(f"Cooling : {em['cost_cool_eur']:>8.0f} €")
+print(f"Fans    : {em['cost_fan_eur']:>8.0f} €")
+print(f"TOTAL   : {em['cost_annual_eur']:>8.0f} €")
