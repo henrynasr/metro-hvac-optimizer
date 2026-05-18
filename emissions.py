@@ -12,6 +12,7 @@ from constants import (
     COP_COOL, COP_HEAT,
     P_FAN_RATED_W, AIRFLOW_MAX_M3H,
     ELEC_PRICE_EUR_KWH,
+    RHO_CP_AIR_J_M3_K, Q_CURTAIN_AIR_M3S, DT_JET_K, P_FAN_CURTAIN_W,
 )
 
 
@@ -49,15 +50,16 @@ def compute_elec_power(
     Q_cool: np.ndarray,
     Q_vent: np.ndarray,
     Q_air_m3s_arr: np.ndarray,
+    curtain_on: np.ndarray,
 ) -> tuple:
     """
     Convert thermal powers [W] to electrical powers [W].
 
     Fan power uses the affinity cube law:
         P_fan = P_rated × (Q_actual / Q_rated)³
-    This is the dominant savings lever — reducing flow by 20% cuts fan power ~49%.
+    Air curtain: dedicated electric unit (COP=1), heater + fan.
 
-    Returns: P_heat, P_cool, P_fan  [W electrical], each array len n
+    Returns: P_heat, P_cool, P_fan, P_curtain  [W electrical], each array len n
     """
     P_heat = np.abs(Q_heat) / COP_HEAT
     P_cool = np.abs(Q_cool) / COP_COOL
@@ -70,7 +72,11 @@ def compute_elec_power(
     flow_ratio  = Q_air_m3s_arr / Q_rated_m3s
     P_fan       = fan_on.astype(float) * P_FAN_RATED_W * flow_ratio**3
 
-    return P_heat, P_cool, P_fan
+    # Air curtain — all electric (COP = 1)
+    P_heat_curtain = RHO_CP_AIR_J_M3_K * Q_CURTAIN_AIR_M3S * DT_JET_K  # W thermal = W electric
+    P_curtain = curtain_on.astype(float) * (P_heat_curtain + P_FAN_CURTAIN_W)
+
+    return P_heat, P_cool, P_fan, P_curtain
 
 
 # -----------------------------------------------------------------------------
@@ -82,6 +88,7 @@ def compute_emissions(
     Q_cool: np.ndarray,
     Q_vent: np.ndarray,
     Q_air_m3s_arr: np.ndarray,
+    curtain_on: np.ndarray,
     dates: pd.DatetimeIndex,
     co2_intensity: np.ndarray,
     dt_s: float = 3600.0,
@@ -90,40 +97,48 @@ def compute_emissions(
     Full emissions pipeline. Returns dict with energy [kWh] and CO₂ [kgCO₂]
     arrays (per timestep) and annual totals.
     """
-    P_heat, P_cool, P_fan = compute_elec_power(Q_heat, Q_cool, Q_vent, Q_air_m3s_arr)
-    P_total = P_heat + P_cool + P_fan
+    P_heat, P_cool, P_fan, P_curtain = compute_elec_power(
+        Q_heat, Q_cool, Q_vent, Q_air_m3s_arr, curtain_on)
+    P_total = P_heat + P_cool + P_fan + P_curtain
 
     dt_h = dt_s / 3600.0
 
-    E_heat  = P_heat  * dt_h / 1000.0
-    E_cool  = P_cool  * dt_h / 1000.0
-    E_fan   = P_fan   * dt_h / 1000.0
-    E_total = P_total * dt_h / 1000.0
+    E_heat    = P_heat    * dt_h / 1000.0
+    E_cool    = P_cool    * dt_h / 1000.0
+    E_fan     = P_fan     * dt_h / 1000.0
+    E_curtain = P_curtain * dt_h / 1000.0
+    E_total   = P_total   * dt_h / 1000.0
 
-    CO2_heat  = E_heat  * co2_intensity / 1000.0
-    CO2_cool  = E_cool  * co2_intensity / 1000.0
-    CO2_fan   = E_fan   * co2_intensity / 1000.0
-    CO2_total = E_total * co2_intensity / 1000.0
+    CO2_heat    = E_heat    * co2_intensity / 1000.0
+    CO2_cool    = E_cool    * co2_intensity / 1000.0
+    CO2_fan     = E_fan     * co2_intensity / 1000.0
+    CO2_curtain = E_curtain * co2_intensity / 1000.0
+    CO2_total   = E_total   * co2_intensity / 1000.0
 
     return {
         "P_heat_W":    P_heat,
         "P_cool_W":    P_cool,
         "P_fan_W":     P_fan,
-        "E_heat_kWh":  E_heat,
-        "E_cool_kWh":  E_cool,
-        "E_fan_kWh":   E_fan,
-        "E_total_kWh": E_total,
-        "CO2_heat_kg":  CO2_heat,
-        "CO2_cool_kg":  CO2_cool,
-        "CO2_fan_kg":   CO2_fan,
-        "CO2_total_kg": CO2_total,
-        "E_heat_total_kWh":   E_heat.sum(),
-        "E_cool_total_kWh":   E_cool.sum(),
-        "E_fan_total_kWh":    E_fan.sum(),
-        "E_annual_kWh":       E_total.sum(),
-        "CO2_annual_kgCO2":   CO2_total.sum(),
+        "P_curtain_W": P_curtain,
+        "E_heat_kWh":    E_heat,
+        "E_cool_kWh":    E_cool,
+        "E_fan_kWh":     E_fan,
+        "E_curtain_kWh": E_curtain,
+        "E_total_kWh":   E_total,
+        "CO2_heat_kg":    CO2_heat,
+        "CO2_cool_kg":    CO2_cool,
+        "CO2_fan_kg":     CO2_fan,
+        "CO2_curtain_kg": CO2_curtain,
+        "CO2_total_kg":   CO2_total,
+        "E_heat_total_kWh":    E_heat.sum(),
+        "E_cool_total_kWh":    E_cool.sum(),
+        "E_fan_total_kWh":     E_fan.sum(),
+        "E_curtain_total_kWh": E_curtain.sum(),
+        "E_annual_kWh":        E_total.sum(),
+        "CO2_annual_kgCO2":    CO2_total.sum(),
         "cost_annual_eur": E_total.sum() * ELEC_PRICE_EUR_KWH,
         "cost_heat_eur":   E_heat.sum()  * ELEC_PRICE_EUR_KWH,
         "cost_cool_eur":   E_cool.sum()  * ELEC_PRICE_EUR_KWH,
         "cost_fan_eur":    E_fan.sum()   * ELEC_PRICE_EUR_KWH,
+        "cost_curtain_eur": E_curtain.sum() * ELEC_PRICE_EUR_KWH,
     }

@@ -101,20 +101,21 @@ def build_Q_array(
 # V_inf = V_cycle / T_headway = (eta * V_platform) / T_headway
 # Hour boundaries are engineering estimates — DUP does not publish hourly headways.
 # WKD: off-peak all day. JOHV/JOVS: peak at 06-09h and 17-20h.
-# Night residual gap infiltration treated as zero (PSD leakage not quantifiable).
+# Night (01h–05h): no trains, V_inf = 0. Hours 23–00h kept as offpeak (trains thinning
+# out — real headway ~15 min, modeled as 4 min offpeak; noted as limitation in README).
 # endregion
 
 _WEEKDAY_REGIME = {
-    **{h: "night"   for h in range(0, 5)},
+    0:  "offpeak",
+    **{h: "night"   for h in range(1, 5)},
     5:  "offpeak",
     **{h: "peak"    for h in range(6, 9)},
     **{h: "offpeak" for h in range(9, 17)},
     **{h: "peak"    for h in range(17, 20)},
-    **{h: "offpeak" for h in range(20, 23)},
-    23: "night",
+    **{h: "offpeak" for h in range(20, 24)},
 }
 
-_WKD_REGIME = {h: ("offpeak" if 6 <= h <= 22 else "night") for h in range(24)}
+_WKD_REGIME = {h: ("night" if 1 <= h < 5 else "offpeak") for h in range(24)}
 
 
 def v_inf_m3s(hour: int, day_type: str) -> float:

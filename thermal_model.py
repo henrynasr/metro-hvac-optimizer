@@ -61,20 +61,20 @@ def run_simulation(
     )
     T_in = sol.y[0]
 
-    # T_tun per hour
+    # T_tun per hour — night = 01h–05h
     T_tun = np.array([
-        T_ext[i] + (T_TUN_OFFSET_DAY_C if 5 <= dates[i].hour <= 23 else T_TUN_OFFSET_NIGHT_C)
+        T_ext[i] + (T_TUN_OFFSET_NIGHT_C if 1 <= dates[i].hour < 5 else T_TUN_OFFSET_DAY_C)
         for i in range(len(dates))
     ])
 
-    # Post-hoc HVAC decomposition (now returns Q_air_m3s_arr)
+    # Post-hoc HVAC decomposition
     (Q_total, Q_heat, Q_cool, Q_vent,
      Q_water_heat, Q_water_cool, T_hw, T_cw,
-     Q_air_m3s_arr) = build_Q_hvac_array(T_in, T_ext, n_people, dates)
+     Q_air_m3s_arr, curtain_on) = build_Q_hvac_array(T_in, T_ext, n_people, Q_int, dates)
 
     # Emissions
     co2_intensity = load_co2_intensity(rte_path, dates)
-    em = compute_emissions(Q_heat, Q_cool, Q_vent, Q_air_m3s_arr, dates, co2_intensity)
+    em = compute_emissions(Q_heat, Q_cool, Q_vent, Q_air_m3s_arr, curtain_on, dates, co2_intensity)
 
     return {
         "dates": dates, "t_array": t_array,
@@ -84,6 +84,7 @@ def run_simulation(
         "Q_water_heat": Q_water_heat, "Q_water_cool": Q_water_cool,
         "T_hw": T_hw, "T_cw": T_cw,
         "Q_air_m3s_arr": Q_air_m3s_arr,
+        "curtain_on": curtain_on,
         "co2_intensity": co2_intensity,
         "em": em,
     }
@@ -195,27 +196,31 @@ def print_summary(r: dict):
     print(f"E_heating : {em['E_heat_total_kWh']:>8.0f} kWh")
     print(f"E_cooling : {em['E_cool_total_kWh']:>8.0f} kWh")
     print(f"E_fans    : {em['E_fan_total_kWh']:>8.0f} kWh")
+    print(f"E_curtain : {em['E_curtain_total_kWh']:>8.0f} kWh")
     print(f"E_TOTAL   : {em['E_annual_kWh']:>8.0f} kWh")
     print(f"CO2_TOTAL : {em['CO2_annual_kgCO2']:>8.0f} kgCO₂")
+    print(f"Curtain h : {r['curtain_on'].sum():>8} h")
 
     monthly = pd.DataFrame({
-        "E_heat_kWh":   em["E_heat_kWh"],
-        "E_cool_kWh":   em["E_cool_kWh"],
-        "E_fan_kWh":    em["E_fan_kWh"],
-        "CO2_total_kg": em["CO2_total_kg"],
-        "intensity":    r["co2_intensity"],
+        "E_heat_kWh":    em["E_heat_kWh"],
+        "E_cool_kWh":    em["E_cool_kWh"],
+        "E_fan_kWh":     em["E_fan_kWh"],
+        "E_curtain_kWh": em["E_curtain_kWh"],
+        "CO2_total_kg":  em["CO2_total_kg"],
+        "intensity":     r["co2_intensity"],
     }, index=r["dates"])
 
     ms = monthly.resample("ME").sum()
     ms["intensity_mean"] = monthly.resample("ME")["intensity"].mean()
 
     print("\n=== Monthly breakdown ===")
-    print(ms[["E_heat_kWh", "E_cool_kWh", "E_fan_kWh", "CO2_total_kg", "intensity_mean"]].round(0).to_string())
+    print(ms[["E_heat_kWh", "E_cool_kWh", "E_fan_kWh", "E_curtain_kWh", "CO2_total_kg", "intensity_mean"]].round(0).to_string())
 
     print(f"\n=== Annual Cost ===")
     print(f"Heating : {em['cost_heat_eur']:>8.0f} €")
     print(f"Cooling : {em['cost_cool_eur']:>8.0f} €")
     print(f"Fans    : {em['cost_fan_eur']:>8.0f} €")
+    print(f"Curtain : {em['cost_curtain_eur']:>8.0f} €")
     print(f"TOTAL   : {em['cost_annual_eur']:>8.0f} €")
 
     # Comfort hours

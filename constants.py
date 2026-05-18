@@ -45,8 +45,8 @@ UA_SOIL_W_K          = U_SOIL_W_M2K * A_SOIL_M2                       # 289.0 W/
 # -----------------------------------------------------------------------------
 
 T_SOIL_C             = 15.0    # °C — stable ground temp, Île-de-France (BRGM). [SOBOL 13–17]
-T_TUN_OFFSET_DAY_C   = 10.0    # °C — T_tun = T_ext + 10 during service (05h–23h). [SOBOL 5–15]
-T_TUN_OFFSET_NIGHT_C =  5.0    # °C — T_tun = T_ext + 5 at night (23h–05h).       [SOBOL 3–8]
+T_TUN_OFFSET_DAY_C   = 10.0    # °C — T_tun = T_ext + 10 during service (not night). [SOBOL 5–15]
+T_TUN_OFFSET_NIGHT_C =  5.0    # °C — T_tun = T_ext + 5 at night (01h–05h).          [SOBOL 3–8]
 
 # -----------------------------------------------------------------------------
 # 4. THERMAL CAPACITANCE
@@ -91,9 +91,33 @@ HEADWAY_PEAK_SOBOL_MIN_S = 90.0  # s — 1.5 min upper bound for Sobol.
 # 6b. STAIRCASE FRESH AIR — passive outdoor air via open stair entrance
 # -----------------------------------------------------------------------------
 
-A_STAIR_M2           =  2.5   # m² — stair free area. [ASSUMPTION] [SOBOL 2.0–3.5]
+A_STAIR_WIDTH_M      =  1.8   # m — stair opening width. [ASSUMPTION]
+A_STAIR_HEIGHT_M     =  2.2   # m — stair opening height. [ASSUMPTION]
+A_STAIR_M2           = A_STAIR_WIDTH_M * A_STAIR_HEIGHT_M  # 3.96 m² — stair free area
 V_AIR_STAIR_MS       =  0.5   # m/s — mean air velocity in staircase. [SOBOL 0.3–0.7]
-Q_STAIR_M3S          = V_AIR_STAIR_MS * A_STAIR_M2                    # 1.25 m³/s = 4500 m³/h
+Q_STAIR_M3S          = V_AIR_STAIR_MS * A_STAIR_M2                    # 3.125 m³/s = 11250 m³/h
+
+# -----------------------------------------------------------------------------
+# 6c. STAIRCASE MODULATION — curtain, cold weather, night closure
+# -----------------------------------------------------------------------------
+
+T_STAIR_COLD_C       =  7.0   # °C — T_ext threshold for air curtain activation. [SOBOL 5–10]
+F_STAIR_COLD         =  0.35  # — fraction of Q_stair passing through when curtain active. [SOBOL 0.30–0.40]
+F_STAIR_NIGHT        =  0.08  # — fraction of Q_stair leaking through metal shutters (01h–05h). [SOBOL 0.05–0.10]
+
+# -----------------------------------------------------------------------------
+# 6d. AIR CURTAIN — dedicated electric unit above stair opening
+# -----------------------------------------------------------------------------
+
+NOZZLE_DEPTH_M       =  0.08  # m — slot nozzle depth
+A_NOZZLE_M2          = NOZZLE_DEPTH_M * A_STAIR_WIDTH_M               # 0.2 m²
+V_JET_MS             =  7.0   # m/s — nozzle outlet velocity. [SOBOL 5–10]
+DT_JET_K             =  5.0   # K — jet temperature above T_in (fixed)
+ETA_IN_CURTAIN       =  0.4   # — fraction of curtain heat staying inside platform. [SOBOL 0.3–0.5]
+P_FAN_CURTAIN_W      = 1500.0 # W — curtain fan electric power (fixed)
+
+# Derived curtain powers (at baseline V_JET)
+Q_CURTAIN_AIR_M3S    = V_JET_MS * A_NOZZLE_M2                         # 1.4 m³/s
 
 # -----------------------------------------------------------------------------
 # 7. OVERPRESSURE — minimum AHU airflow
@@ -113,13 +137,13 @@ AIRFLOW_MAX_M3H = (AIRFLOW_OVERPRESSURE_M3H + PEOPLE_PEAK * AIRFLOW_PER_PERSON_M
 # 9. REGULATION SETPOINTS
 # -----------------------------------------------------------------------------
 # region setpoint law
-# 5-zone outdoor compensation law:
+# 5-zone outdoor compensation law (service hours):
 #   T_ext ≤  5°C       → T_set = 18°C (frost protection + minimum comfort)
 #   5 < T_ext < 15°C   → T_set = 18–20°C linear interpolation
-#   15 ≤ T_ext ≤ 22°C  → dead band (T_set = NaN, ventilation only)
+#   15 ≤ T_ext ≤ 22°C  → dead band (T_set = NaN, pure ventilation with outdoor air)
 #   22 < T_ext ≤ 32°C  → T_set = 26°C (fixed cooling target)
 #   T_ext > 32°C       → T_set = min(27, T_ext − 6) — cap delta vs outdoor
-# High-limit override: if T_in > T_IN_HIGH_LIMIT regardless of T_ext → force cooling to 26°C
+# Night (01h–05h): anti-freeze setback to 5°C
 # endregion
 
 T_EXT_HEAT_LOW_C     =  5.0    # °C — below this, heat to T_HEAT_LOW_C
@@ -134,6 +158,7 @@ T_COOL_CAP_C         = 27.0    # °C — absolute max cooling setpoint
 T_IN_HIGH_LIMIT_C    = 26.0    # °C — high-limit override: force cooling if T_in exceeds this in dead band
 T_BLOW_COOL_C        = 15.0    # °C — AHU supply, cooling mode. [ASSUMPTION] [SOBOL 13–17]
 T_BLOW_HEAT_C        = 30.0    # °C — AHU supply, heating mode. [ASSUMPTION] [SOBOL 28–35]
+T_NIGHT_SETBACK_C    =  5.0    # °C — anti-freeze setpoint during night (01h–05h)
 
 # -----------------------------------------------------------------------------
 # 10. AIR PROPERTIES
@@ -150,20 +175,17 @@ T_HW_EXT_LOW_C       = -7.0    # °C — T_ext anchor, hot water max supply
 T_HW_EXT_HIGH_C      = 15.0    # °C — hot water shutoff
 T_HW_EXT_HYST_C      = 13.0    # °C — hot water restart threshold
 T_HW_SUPPLY_MAX      = 50.0    # °C — hot water supply at T_ext = -7
-T_HW_SUPPLY_MIN      = 35.0    # °C — hot water supply at T_ext = 12
-T_HW_RETURN_MAX      = 45.0    # °C
-T_HW_RETURN_MIN      = 30.0    # °C
+T_HW_SUPPLY_MIN      = 40.0    # °C — hot water supply at T_ext = 15. Return = 35°C (ΔT = 5K).
+T_HW_RETURN_MAX      = 45.0    # °C — return at max supply (50 − 5)
+T_HW_RETURN_MIN      = 35.0    # °C — return at min supply (40 − 5). ΔT = 5K constant.
 
 T_CW_EXT_LOW_C       = 26.0    # °C — cold water shutoff
-T_CW_EXT_HIGH_C      = 31.0    # °C — T_ext anchor, cold water min supply
 T_CW_EXT_HYST_C      = 27.0    # °C — cold water restart threshold
-T_CW_SUPPLY_MIN      =  8.0    # °C — cold water supply at T_ext = 31
-T_CW_SUPPLY_MAX      = 12.0    # °C — cold water supply at T_ext = 26
-T_CW_RETURN_MIN      = 14.0    # °C
-T_CW_RETURN_MAX      = 18.0    # °C
+T_CW_SUPPLY_C        =  8.0    # °C — fixed cold water supply
+T_CW_RETURN_C        = 13.0    # °C — fixed cold water return (must be < T_BLOW_COOL 15°C)
 
-DT_WATER_HEAT_K      = T_HW_SUPPLY_MAX - T_HW_RETURN_MAX   # 5 K — heating circuit ΔT
-DT_WATER_COOL_K      = T_CW_RETURN_MIN - T_CW_SUPPLY_MIN   # 6 K — cooling circuit ΔT
+DT_WATER_HEAT_K      = 5.0     # K — constant heating circuit ΔT (supply − return)
+DT_WATER_COOL_K      = T_CW_RETURN_C - T_CW_SUPPLY_C   # 5 K — cooling circuit ΔT
 
 # -----------------------------------------------------------------------------
 # 12. AHU AIR MIX
