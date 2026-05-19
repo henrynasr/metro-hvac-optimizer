@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from constants import (
-    COP_COOL, COP_HEAT,
+    COP_COOL, COP_CURTAIN, COP_HEAT,
     P_FAN_RATED_W, AIRFLOW_MAX_M3H,
     ELEC_PRICE_EUR_KWH,
     RHO_CP_AIR_J_M3_K, Q_CURTAIN_AIR_M3S, DT_JET_K, P_FAN_CURTAIN_W,
@@ -72,9 +72,9 @@ def compute_elec_power(
     flow_ratio  = Q_air_m3s_arr / Q_rated_m3s
     P_fan       = fan_on.astype(float) * P_FAN_RATED_W * flow_ratio**3
 
-    # Air curtain — all electric (COP = 1)
-    P_heat_curtain = RHO_CP_AIR_J_M3_K * Q_CURTAIN_AIR_M3S * DT_JET_K  # W thermal = W electric
-    P_curtain = curtain_on.astype(float) * (P_heat_curtain + P_FAN_CURTAIN_W)
+    # Air curtain: runs whenever curtain_on is True, with fixed thermal power and fan power.
+    P_heat_curtain = RHO_CP_AIR_J_M3_K * Q_CURTAIN_AIR_M3S * DT_JET_K  # 8442 W thermal
+    P_curtain = curtain_on.astype(float) * (P_heat_curtain / COP_CURTAIN + P_FAN_CURTAIN_W)
 
     return P_heat, P_cool, P_fan, P_curtain
 

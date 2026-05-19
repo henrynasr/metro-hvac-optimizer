@@ -233,6 +233,18 @@ def print_summary(r: dict):
     print(f"Hours T_in > 26°C: {above_26:>5} / {total}  ({above_26/total*100:.1f}%)")
     print(f"Hours T_in < 18°C: {below_18:>5} / {total}  ({below_18/total*100:.1f}%)")
 
+    is_service = np.array([not (1 <= ts.hour < 5) for ts in r["dates"]])
+
+    above_26_service = ((r["T_in"] > 26.0) & is_service).sum()
+    below_18_service = ((r["T_in"] < 18.0) & is_service).sum()
+    below_18_night   = ((r["T_in"] < 18.0) & ~is_service).sum()
+    service_hours    = is_service.sum()
+
+    print(f"Service hours      : {service_hours} / {total}")
+    print(f"Hours T_in > 26°C (service): {above_26_service} ({above_26_service/service_hours*100:.1f}%)")
+    print(f"Hours T_in < 18°C (service): {below_18_service} ({below_18_service/service_hours*100:.1f}%)")
+    print(f"Hours T_in < 18°C (night)  : {below_18_night} ({below_18_night/4*8784/8784:.0f}h expected max {8784//5})")
+
 
 # -----------------------------------------------------------------------------
 # 4. MAIN
@@ -242,3 +254,8 @@ if __name__ == "__main__":
     r = run_simulation()
     plot_results(r)
     print_summary(r)
+    import collections
+    is_service = np.array([not (1 <= ts.hour < 5) for ts in r["dates"]])
+    cold_service = [r["dates"][i].hour for i in range(len(r["T_in"]))
+                    if r["T_in"][i] < 18.0 and is_service[i]]
+    print(collections.Counter(sorted(cold_service)))

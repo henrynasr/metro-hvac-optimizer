@@ -211,6 +211,7 @@ COP_COOL  = 5.5    # water-cooled chiller              [SOBOL 4.0–6.5]
 COP_HEAT  = 4.0    # water-water heat pump, 50°C supply [SOBOL 3.0–5.5]
 ETA_FAN   = 0.60   # fan + motor + VFD combined         [SOBOL 0.40–0.70]
 DP_AHU_PA = 800    # Pa — total static pressure, AHU+ducts  [SOBOL 500–1200]
+COP_CURTAIN = COP_HEAT   # 4.0 — hot water coil fed from same heat pump. [SOBOL 1.0–4.0]
 
 # Fan rated power at design flow — reference for cube law
 P_FAN_RATED_W = AIRFLOW_MAX_M3H / 3600.0 * DP_AHU_PA / ETA_FAN       # 3564 W at 9625 m³/h
