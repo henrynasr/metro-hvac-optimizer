@@ -104,9 +104,10 @@ Q_STAIR_M3S          = V_AIR_STAIR_MS * A_STAIR_M2                    # 3.125 m�
 T_STAIR_COLD_C       =  7.0   # °C — T_ext threshold for air curtain activation. [SOBOL 5–10]
 F_STAIR_COLD         =  0.35  # — fraction of Q_stair passing through when curtain active. [SOBOL 0.30–0.40]
 F_STAIR_NIGHT        =  0.08  # — fraction of Q_stair leaking through metal shutters (01h–05h). [SOBOL 0.05–0.10]
+# Note: door conduction (~U=2.5 W/m²K × 3.96 m² = 10 W/K) ignored — ~120 W vs 2,290 W infiltration loss, <5% effect.
 
 # -----------------------------------------------------------------------------
-# 6d. AIR CURTAIN — dedicated electric unit above stair opening
+# 6d. AIR CURTAIN — hot-water-heated unit (COP=COP_HEAT=4.0), parallel branch on heating circuit.
 # -----------------------------------------------------------------------------
 
 NOZZLE_DEPTH_M       =  0.08  # m — slot nozzle depth

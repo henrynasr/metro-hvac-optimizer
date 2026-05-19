@@ -89,10 +89,10 @@ python thermal_model.py
 
 ## Key findings
 
-**Annual 2024 (one platform side, stair 1.8×2.2m):**
-T_in 15.4–29.2°C. E_total = 27,639 kWh, CO₂ = 780 kgCO₂, cost = 4,699€/year.
-Heating = 13,138 kWh (48%), curtain = 10,087 kWh (36%), fans = 3,649 kWh (13%), cooling = 766 kWh (3%).
-Comfort: 5.6% hours above 26°C, 18.1% hours below 18°C (service + night combined).
+**Annual 2024 (one platform side, stair 1.8×2.2m, COP_CURTAIN=4.0):**
+T_in 15.4–29.2°C. E_total = 21,572 kWh, CO₂ = 578 kgCO₂, cost = 3,667€/year.
+Heating = 13,138 kWh (61%), curtain = 4,019 kWh (19%), fans = 3,649 kWh (17%), cooling = 766 kWh (4%).
+Comfort (service hours): 6.1% above 26°C, 15.6% below 18°C (warmup artifact — 46% concentrated in 05h–08h post-setback ramp).
 
 **Key finding — air curtain cost:** curtain runs 1,331 h/year and accounts for 36% of total electricity. At COP=1 (electric resistance), it is the single most expensive component after heating. Worth revisiting: dedicated heat pump unit or hot water feed from district heating would cut this significantly.
 
@@ -119,12 +119,4 @@ Comfort: 5.6% hours above 26°C, 18.1% hours below 18°C (service + night combin
 
 ## Status
 
-**Week 3, Session 17 — 2026-05-18.** Regulation overhaul + staircase modulation + air curtain.
-- Dead band: was Q_hvac=0, now pure ventilation with outdoor air (physically correct).
-- Heating + cooling airflow boost: AHU ramps up to AIRFLOW_MAX when hygiene flow can't meet load.
-- Night setback: 01h–05h → anti-freeze 5°C only. Trains stop at 01h.
-- Staircase: A_stair corrected to 1.8×2.2m = 3.96 m², Q_base = 1.98 m³/s. Three regimes: full open / curtain active (F=0.35) / metal shutter night (F=0.08).
-- Air curtain: dedicated electric unit, ~10 kW, active when T_ext < 7°C during service. Heat spill (40%) added to ODE.
-- Water: cold fixed 8/13°C (ΔT=5K). Hot min supply corrected to 40°C (return 35°C, ΔT=5K constant).
-- emissions.py: curtain electric power (heater + fan, COP=1) added to all energy/CO₂/cost totals.
-- Next: new laptop env setup, sobol_A/B update for new ODE signature, psychrometric layer, Pareto front. Revisit curtain energy source (COP=1 is expensive).
+**Week 4, Session 18 — 2026-05-19.** COP_CURTAIN=4 (hot water coil, parallel hydronic circuit). Curtain energy 10,087→4,019 kWh. Comfort hours split service/night. Below-18°C diagnosed as post-setback warmup, not sizing issue.
