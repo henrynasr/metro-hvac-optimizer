@@ -208,11 +208,13 @@ RH_STRUCTURAL        = 0.80    # — ASHRAE 160 mold criterion, 30-day avg
 # 14. EMISSIONS
 # -----------------------------------------------------------------------------
 
-COP_COOL  = 5.5    # water-cooled chiller              [SOBOL 4.0–6.5]
-COP_HEAT  = 4.0    # water-water heat pump, 50°C supply [SOBOL 3.0–5.5]
+COP_COOL  = 5.5    # water-cooled chiller, fixed supply 8°C  [SOBOL 4.0–6.5]
+COP_HEAT  = 4.0    # fallback constant — used only when T_hw unavailable [SOBOL 3.0–5.5]
+ETA_CARNOT_HEAT = 0.45  # — Carnot efficiency factor for heat pump. [SOBOL 0.40–0.55]
+# COP_heat(T_hw, T_ext) = ETA_CARNOT_HEAT × T_hw_K / (T_hw_K − T_ext_K).  Air-source HP.
 ETA_FAN   = 0.60   # fan + motor + VFD combined         [SOBOL 0.40–0.70]
 DP_AHU_PA = 800    # Pa — total static pressure, AHU+ducts  [SOBOL 500–1200]
-COP_CURTAIN = COP_HEAT   # 4.0 — hot water coil fed from same heat pump. [SOBOL 1.0–4.0]
+COP_CURTAIN = COP_HEAT   # fallback — curtain uses same variable COP when T_hw available
 
 # Fan rated power at design flow — reference for cube law
 P_FAN_RATED_W = AIRFLOW_MAX_M3H / 3600.0 * DP_AHU_PA / ETA_FAN       # 3564 W at 9625 m³/h

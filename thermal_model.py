@@ -75,7 +75,8 @@ def run_simulation(
 
     # Emissions
     co2_intensity = load_co2_intensity(rte_path, dates)
-    em = compute_emissions(Q_heat, Q_cool, Q_vent, Q_air_m3s_arr, curtain_on, dates, co2_intensity)
+    em = compute_emissions(Q_heat, Q_cool, Q_vent, Q_air_m3s_arr, curtain_on,
+                           dates, co2_intensity, T_ext, T_hw)
 
     return {
         "dates": dates, "t_array": t_array,
