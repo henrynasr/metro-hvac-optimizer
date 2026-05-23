@@ -15,7 +15,7 @@ from constants import (
     C_TOTAL_J_K, T_SOIL_C,
     T_TUN_OFFSET_DAY_C, T_TUN_OFFSET_NIGHT_C,
     UA_FACADE_W_K, UA_TUN_WALL_W_K, UA_SOIL_W_K, RHO_CP_AIR_J_M3_K,
-    Q_STAIR_M3S,
+    Q_STAIR_M3S, COP_COOL,
 )
 from occupancy import load_profiles, build_Q_array
 from regulation import dT_dt, build_Q_hvac_array
@@ -43,6 +43,7 @@ def run_simulation(
     df_sim   = df.loc[sim_start:sim_end].copy()
     dates    = df_sim.index
     T_ext    = df_sim["temperature_2m"].values
+    RH_ext   = df_sim["relative_humidity_2m"].values / 100.0   # CSV is 0–100, we need 0–1
     t_array  = np.arange(len(dates)) * 3600.0
 
     profiles        = load_profiles(xlsx_path)
@@ -79,6 +80,7 @@ def run_simulation(
     return {
         "dates": dates, "t_array": t_array,
         "T_ext": T_ext, "T_in": T_in, "T_tun": T_tun,
+        "RH_ext": RH_ext,
         "Q_int": Q_int, "n_people": n_people,
         "Q_total": Q_total, "Q_heat": Q_heat, "Q_cool": Q_cool, "Q_vent": Q_vent,
         "Q_water_heat": Q_water_heat, "Q_water_cool": Q_water_cool,
@@ -245,17 +247,60 @@ def print_summary(r: dict):
     print(f"Hours T_in < 18°C (service): {below_18_service} ({below_18_service/service_hours*100:.1f}%)")
     print(f"Hours T_in < 18°C (night)  : {below_18_night} ({below_18_night/4*8784/8784:.0f}h expected max {8784//5})")
 
+    # Humidity comfort
+    if "humidity" in r:
+        h = r["humidity"]
+        print(f"\n=== Humidity ===")
+        print(f"RH_in comfort (40–60%):  {h['pct_RH_ok_service']:>5.1f}% of service hours")
+        print(f"RH_in too low  (<40%):   {h['pct_RH_low_service']:>5.1f}%")
+        print(f"RH_in too high (>60%):   {h['pct_RH_high_service']:>5.1f}%")
+        print(f"Condensation hours:      {h['hours_condensation']:>5}")
+        print(f"Latent cooling load:     {h['latent_cool_total_kWh']:>8.0f} kWh")
+
 
 # -----------------------------------------------------------------------------
 # 4. MAIN
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    from humidity import compute_humidity
+    from constants import ELEC_PRICE_EUR_KWH
+
     r = run_simulation()
+    r["humidity"] = compute_humidity(r)
+
+    # --- Latent cooling correction ---
+    # The chiller removes both sensible heat (air cooling) and latent heat
+    # (condensation). emissions.py only counted sensible. Add latent here.
+    h  = r["humidity"]
+    em = r["em"]
+    E_latent_elec = h["latent_cool_total_kWh"] / COP_COOL   # kWh electrical
+
+    em["E_cool_latent_kWh"]    = E_latent_elec
+    em["E_cool_total_kWh"]    += E_latent_elec
+    em["E_annual_kWh"]        += E_latent_elec
+    em["CO2_annual_kgCO2"]    += E_latent_elec * r["co2_intensity"].mean() / 1000.0
+    em["cost_cool_eur"]       += E_latent_elec * ELEC_PRICE_EUR_KWH
+    em["cost_annual_eur"]     += E_latent_elec * ELEC_PRICE_EUR_KWH
+
     plot_results(r)
     print_summary(r)
-    import collections
+
+    # --- Humidity diagnostic: when is RH too high? ---
+    h = r["humidity"]
     is_service = np.array([not (1 <= ts.hour < 5) for ts in r["dates"]])
-    cold_service = [r["dates"][i].hour for i in range(len(r["T_in"]))
-                    if r["T_in"][i] < 18.0 and is_service[i]]
-    print(collections.Counter(sorted(cold_service)))
+    rh_high = h["RH_in"] > 0.60
+
+    # Which HVAC mode is active at each high-RH hour?
+    high_rh_service = rh_high & is_service
+    n_high = high_rh_service.sum()
+
+    heating = r["Q_heat"] != 0
+    cooling = r["Q_cool"] != 0
+    dead_band = r["Q_vent"] != 0
+
+    print(f"\n=== RH > 60% diagnostic ({n_high} service hours) ===")
+    print(f"  During heating:   {(high_rh_service & heating).sum():>5}")
+    print(f"  During cooling:   {(high_rh_service & cooling).sum():>5}")
+    print(f"  During dead band: {(high_rh_service & dead_band).sum():>5}")
+    print(f"  HVAC off:         {(high_rh_service & ~heating & ~cooling & ~dead_band).sum():>5}")

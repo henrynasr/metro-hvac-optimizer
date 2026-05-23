@@ -175,7 +175,7 @@ def dT_dt(
                 Q_air_m3s = min(Q_air_required, AIRFLOW_MAX_M3H / 3600.0)
             Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_HEAT_C)
         else:
-            Q_hvac = 0.0
+            Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
 
     else:
         # Cooling — airflow boost if hygiene flow can't meet load
@@ -187,7 +187,7 @@ def dT_dt(
                 Q_air_m3s = min(Q_air_required, AIRFLOW_MAX_M3H / 3600.0)
             Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_COOL_C)
         else:
-            Q_hvac = 0.0
+            Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
 
     dTdt = (Q_facade + Q_soil + Q_int + Q_stair + Q_curtain_zone - Q_hvac) / C_TOTAL_J_K
     return [dTdt]
@@ -310,9 +310,11 @@ def build_Q_hvac_array(
                     Q_air_m3s = min(Q_air_required, AIRFLOW_MAX_M3H / 3600.0)
 
                 q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_HEAT_C)
+                Q_heat[i] = q
             else:
-                q = 0.0
-            Q_heat[i] = Q_total[i] = q
+                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
+                Q_vent[i] = q
+            Q_total[i] = q
             if heating_active and q != 0.0:
                 Q_water_heat[i] = (Q_air_m3s * RHO_CP_AIR_J_M3_K * (T_BLOW_HEAT_C - T_mix)
                                    / (RHO_GLYCOL_KG_M3 * CP_GLYCOL_J_KG_K * DT_WATER_HEAT_K))
@@ -344,9 +346,11 @@ def build_Q_hvac_array(
                     Q_air_m3s = min(Q_air_required, AIRFLOW_MAX_M3H / 3600.0)
 
                 q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_COOL_C)
+                Q_cool[i] = q
             else:
-                q = 0.0
-            Q_cool[i] = Q_total[i] = q
+                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
+                Q_vent[i] = q
+            Q_total[i] = q
             if cooling_active and q != 0.0:
                 Q_water_cool[i] = (Q_air_m3s * RHO_CP_AIR_J_M3_K * (T_mix - T_BLOW_COOL_C)
                                    / (RHO_GLYCOL_KG_M3 * CP_GLYCOL_J_KG_K * DT_WATER_COOL_K))
