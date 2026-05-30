@@ -13,10 +13,10 @@ from constants import (
     C_TOTAL_J_K,
     AIRFLOW_MIN_M3H, AIRFLOW_MAX_M3H, AIRFLOW_PER_PERSON_M3H, AIRFLOW_OVERPRESSURE_M3H,
     Q_STAIR_M3S, T_STAIR_COLD_C, F_STAIR_COLD, F_STAIR_NIGHT,
-    Q_CURTAIN_AIR_M3S, DT_JET_K, ETA_IN_CURTAIN, P_FAN_CURTAIN_W,
+    Q_CURTAIN_AIR_M3S, DT_JET_K, ETA_IN_CURTAIN,
     T_EXT_HEAT_LOW_C, T_HEAT_LOW_C, T_HEAT_HIGH_C,
     T_DEAD_LOW_C, T_DEAD_HIGH_C,
-    T_COOL_FIXED_C, T_COOL_DELTA_C, T_COOL_CAP_C, T_EXT_DELTA_C,
+    T_COOL_FIXED_C, T_COOL_DELTA_C, T_EXT_DELTA_C,
     T_BLOW_HEAT_C, T_BLOW_COOL_C, T_NIGHT_SETBACK_C,
     PEOPLE_PEAK,
     T_HW_EXT_LOW_C, T_HW_EXT_HIGH_C, T_HW_EXT_HYST_C, T_HW_SUPPLY_MAX, T_HW_SUPPLY_MIN,
@@ -57,8 +57,7 @@ def T_setpoint(T_ext: float, hour: int = 12) -> float:
     elif T_ext <= T_EXT_DELTA_C:
         return T_COOL_FIXED_C                       # 26°C
     else:
-        return min(T_COOL_CAP_C, T_ext - T_COOL_DELTA_C)  # min(27, T_ext-6)
-
+        return T_ext - T_COOL_DELTA_C             # T_ext − 6°C
 
 # -----------------------------------------------------------------------------
 # 1b. STAIRCASE FLOW MODULATION  q_stair = f(T_ext, hour)
@@ -162,7 +161,7 @@ def dT_dt(
 
     if np.isnan(T_set):
         # Dead band — pure ventilation with outdoor air
-        Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
+        Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext) * (1 - FRAC_RETURN_AIR)
 
     elif T_set > T_in:
         # Heating — airflow boost if hygiene flow can't keep up
@@ -173,9 +172,9 @@ def dT_dt(
                 # Hygiene flow can't cover losses — boost
                 Q_air_required = -Q_gains / (RHO_CP_AIR_J_M3_K * (T_BLOW_HEAT_C - T_in))
                 Q_air_m3s = min(Q_air_required, AIRFLOW_MAX_M3H / 3600.0)
-            Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_HEAT_C)
+            Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_HEAT_C) # return air already accounted for in T_blow_heat_C
         else:
-            Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
+            Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext) * (1 - FRAC_RETURN_AIR)
 
     else:
         # Cooling — airflow boost if hygiene flow can't meet load
@@ -185,9 +184,9 @@ def dT_dt(
             if Q_load > Q_cool_hygiene:
                 Q_air_required = Q_load / (RHO_CP_AIR_J_M3_K * (T_in - T_BLOW_COOL_C))
                 Q_air_m3s = min(Q_air_required, AIRFLOW_MAX_M3H / 3600.0)
-            Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_COOL_C)
+            Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_COOL_C) # return air already accounted for in T_blow_cool_C
         else:
-            Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
+            Q_hvac = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext) * (1 - FRAC_RETURN_AIR)
 
     dTdt = (Q_facade + Q_soil + Q_int + Q_stair + Q_curtain_zone - Q_hvac) / C_TOTAL_J_K
     return [dTdt]
@@ -280,7 +279,7 @@ def build_Q_hvac_array(
 
         if np.isnan(T_set):
             # Dead band — pure ventilation with outdoor air
-            q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
+            q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext) * (1 - FRAC_RETURN_AIR)
             Q_vent[i] = Q_total[i] = q
 
         elif T_set > T_in:
@@ -309,10 +308,10 @@ def build_Q_hvac_array(
                     Q_air_required = -Q_gains / (RHO_CP_AIR_J_M3_K * (T_BLOW_HEAT_C - T_in))
                     Q_air_m3s = min(Q_air_required, AIRFLOW_MAX_M3H / 3600.0)
 
-                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_HEAT_C)
+                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_HEAT_C) # return air already accounted for in T_blow_heat_C
                 Q_heat[i] = q
             else:
-                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
+                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext) * (1 - FRAC_RETURN_AIR)
                 Q_vent[i] = q
             Q_total[i] = q
             if heating_active and q != 0.0:
@@ -345,10 +344,10 @@ def build_Q_hvac_array(
                     Q_air_required = Q_load / (RHO_CP_AIR_J_M3_K * (T_in - T_BLOW_COOL_C))
                     Q_air_m3s = min(Q_air_required, AIRFLOW_MAX_M3H / 3600.0)
 
-                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_COOL_C)
+                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_BLOW_COOL_C) # return air already accounted for in T_blow_cool_C
                 Q_cool[i] = q
             else:
-                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext)
+                q = RHO_CP_AIR_J_M3_K * Q_air_m3s * (T_in - T_ext) * (1 - FRAC_RETURN_AIR)
                 Q_vent[i] = q
             Q_total[i] = q
             if cooling_active and q != 0.0:

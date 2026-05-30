@@ -95,7 +95,7 @@ A_STAIR_WIDTH_M      =  1.8   # m — stair opening width. [ASSUMPTION]
 A_STAIR_HEIGHT_M     =  2.2   # m — stair opening height. [ASSUMPTION]
 A_STAIR_M2           = A_STAIR_WIDTH_M * A_STAIR_HEIGHT_M  # 3.96 m² — stair free area
 V_AIR_STAIR_MS       =  0.5   # m/s — mean air velocity in staircase. [SOBOL 0.3–0.7]
-Q_STAIR_M3S          = V_AIR_STAIR_MS * A_STAIR_M2                    # 3.125 m³/s = 11250 m³/h
+Q_STAIR_M3S          = V_AIR_STAIR_MS * A_STAIR_M2                    # 1.98 m³/s = 7128 m³/h
 
 # -----------------------------------------------------------------------------
 # 6c. STAIRCASE MODULATION — curtain, cold weather, night closure
@@ -104,7 +104,7 @@ Q_STAIR_M3S          = V_AIR_STAIR_MS * A_STAIR_M2                    # 3.125 m�
 T_STAIR_COLD_C       =  7.0   # °C — T_ext threshold for air curtain activation. [SOBOL 5–10]
 F_STAIR_COLD         =  0.35  # — fraction of Q_stair passing through when curtain active. [SOBOL 0.30–0.40]
 F_STAIR_NIGHT        =  0.08  # — fraction of Q_stair leaking through metal shutters (01h–05h). [SOBOL 0.05–0.10]
-# Note: door conduction (~U=2.5 W/m²K × 3.96 m² = 10 W/K) ignored — ~120 W vs 2,290 W infiltration loss, <5% effect.
+# Note: door conduction (~U=2.5 W/m²K × 3.96 m² = 10 W/K) ignored — ~120 W vs 570 W infiltration loss, negligible in sensitivity analysis.
 
 # -----------------------------------------------------------------------------
 # 6d. AIR CURTAIN — hot-water-heated unit (COP=COP_HEAT=4.0), parallel branch on heating circuit.
@@ -154,9 +154,7 @@ T_DEAD_LOW_C         = 15.0    # °C — dead band lower boundary (T_ext)
 T_DEAD_HIGH_C        = 22.0    # °C — dead band upper boundary (T_ext)
 T_COOL_FIXED_C       = 26.0    # °C — cooling target for 22 < T_ext ≤ 32
 T_COOL_DELTA_C       =  6.0    # °C — max ΔT vs outdoor above T_EXT_DELTA_C. [SOBOL 4–8]
-T_EXT_DELTA_C        = 32.0    # °C — above this, cooling target = T_ext − T_COOL_DELTA (capped at T_COOL_CAP)
-T_COOL_CAP_C         = 27.0    # °C — absolute max cooling setpoint
-T_IN_HIGH_LIMIT_C    = 26.0    # °C — high-limit override: force cooling if T_in exceeds this in dead band
+T_EXT_DELTA_C        = 32.0    # °C — above this, cooling target = T_ext − T_COOL_DELTA_C
 T_BLOW_COOL_C        = 15.0    # °C — AHU supply, cooling mode. [ASSUMPTION] [SOBOL 13–17]
 T_BLOW_HEAT_C        = 30.0    # °C — AHU supply, heating mode. [ASSUMPTION] [SOBOL 28–35]
 T_NIGHT_SETBACK_C    =  5.0    # °C — anti-freeze setpoint during night (01h–05h)

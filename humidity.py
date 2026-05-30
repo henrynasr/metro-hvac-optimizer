@@ -71,7 +71,6 @@ def T_dew(W: float) -> float:
 # -----------------------------------------------------------------------------
 
 def _compute_W_in_step(
-    T_in: float,
     T_ext: float,
     RH_ext: float,
     n_people: float,
@@ -134,7 +133,7 @@ def compute_humidity(r: dict) -> dict:
     """
     Compute indoor humidity from simulation results dict.
 
-    Expects r to contain: T_in, T_ext, n_people, Q_air_m3s_arr, dates,
+    Expects r to contain: T_in, T_ext, n_people, Q_air_m3s_arr, dates
     and requires RH_ext in the weather data.
 
     Returns dict with:
@@ -176,7 +175,7 @@ def compute_humidity(r: dict) -> dict:
 
         # Solve for W_in
         W_in_arr[i] = _compute_W_in_step(
-            T_in[i], T_ext[i], RH_ext[i], n_people[i],
+            T_ext[i], RH_ext[i], n_people[i],
             Q_air_m3s[i], Q_stair, V_inf, cooling_active,
         )
 

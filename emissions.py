@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from constants import (
-    COP_COOL, COP_CURTAIN, COP_HEAT, ETA_CARNOT_HEAT,
+    COP_COOL, COP_HEAT, ETA_CARNOT_HEAT,
     P_FAN_RATED_W, AIRFLOW_MAX_M3H,
     ELEC_PRICE_EUR_KWH,
     RHO_CP_AIR_J_M3_K, Q_CURTAIN_AIR_M3S, DT_JET_K, P_FAN_CURTAIN_W,
@@ -108,7 +108,6 @@ def compute_emissions(
     Q_vent: np.ndarray,
     Q_air_m3s_arr: np.ndarray,
     curtain_on: np.ndarray,
-    dates: pd.DatetimeIndex,
     co2_intensity: np.ndarray,
     T_ext_array: np.ndarray,
     T_hw_arr: np.ndarray,
