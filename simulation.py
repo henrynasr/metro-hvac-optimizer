@@ -14,10 +14,10 @@ import pandas as pd
 from scipy.integrate import solve_ivp
 
 from constants import (
-    C_TOTAL_J_K, T_SOIL_C,
-    T_TUN_OFFSET_DAY_C, T_TUN_OFFSET_NIGHT_C,
-    UA_FACADE_W_K, UA_TUN_WALL_W_K, UA_SOIL_W_K, RHO_CP_AIR_J_M3_K,
-    Q_STAIR_M3S, COP_COOL, ELEC_PRICE_EUR_KWH,
+    T_SOIL_C, T_TUN_OFFSET_DAY_C, T_TUN_OFFSET_NIGHT_C,
+    COP_COOL, ELEC_PRICE_EUR_KWH, 
+    T_COMFORT_LOW, T_COMFORT_HIGH, T_MILD_LOW, T_MILD_HIGH,
+    RH_COMFORT_LOW, RH_COMFORT_HIGH, RH_MILD_LOW, RH_MILD_HIGH
 )
 from occupancy import load_profiles, build_Q_array
 from regulation import dT_dt, build_Q_hvac_array
@@ -27,22 +27,7 @@ from humidity import compute_humidity
 
 
 # -----------------------------------------------------------------------------
-# 1. COMFORT THRESHOLDS
-# -----------------------------------------------------------------------------
-
-T_COMFORT_LOW   = 18.0    # °C
-T_COMFORT_HIGH  = 26.0
-T_MILD_LOW      = 14.0
-T_MILD_HIGH     = 28.0
-
-RH_COMFORT_LOW  = 0.40
-RH_COMFORT_HIGH = 0.60
-RH_MILD_LOW     = 0.35
-RH_MILD_HIGH    = 0.65
-
-
-# -----------------------------------------------------------------------------
-# 2. COMFORT CLASSIFICATION
+# 1. COMFORT CLASSIFICATION
 # -----------------------------------------------------------------------------
 
 def classify_comfort(
@@ -120,7 +105,7 @@ def classify_comfort(
 
 
 # -----------------------------------------------------------------------------
-# 3. SIMULATION ENGINE
+# 2. SIMULATION ENGINE
 # -----------------------------------------------------------------------------
 
 def run_simulation(
@@ -175,7 +160,7 @@ def run_simulation(
     # --- Emissions ---
     co2_intensity = load_co2_intensity(rte_path, dates)
     em = compute_emissions(Q_heat, Q_cool, Q_vent, Q_air_m3s_arr, curtain_on,
-                           co2_intensity, T_ext, T_hw)
+                           co2_intensity, T_ext, T_hw, dates)
 
     # --- Build results dict (needed by compute_humidity) ---
     r = {
@@ -216,7 +201,7 @@ def run_simulation(
 
 
 # -----------------------------------------------------------------------------
-# 4. SUMMARY PRINTOUT
+# 3. SUMMARY PRINTOUT
 # -----------------------------------------------------------------------------
 
 def print_summary(r: dict):
@@ -301,11 +286,11 @@ def print_summary(r: dict):
 
 
 # -----------------------------------------------------------------------------
-# 5. PLOT (unchanged — to be redone)
+# 4. PLOT FUNCTIONS
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
-# 5a. TEMPERATURES
+# 4a. TEMPERATURES
 # -----------------------------------------------------------------------------
  
 def plot_temperatures(r: dict, filename: str = "images/temperatures.png"):
@@ -346,7 +331,7 @@ def plot_temperatures(r: dict, filename: str = "images/temperatures.png"):
  
  
 # -----------------------------------------------------------------------------
-# 5b. HVAC DECOMPOSITION
+# 4b. HVAC DECOMPOSITION
 # -----------------------------------------------------------------------------
  
 def plot_hvac(r: dict, filename: str = "images/hvac.png"):
@@ -387,7 +372,7 @@ def plot_hvac(r: dict, filename: str = "images/hvac.png"):
  
  
 # -----------------------------------------------------------------------------
-# 5c. HUMIDITY
+# 4c. HUMIDITY
 # -----------------------------------------------------------------------------
  
 def plot_humidity(r: dict, filename: str = "images/humidity.png"):
@@ -423,7 +408,7 @@ def plot_humidity(r: dict, filename: str = "images/humidity.png"):
  
  
 # -----------------------------------------------------------------------------
-# 5d. WATER TEMPERATURES
+# 4d. WATER TEMPERATURES
 # -----------------------------------------------------------------------------
  
 def plot_water(r: dict, filename: str = "images/water_temps.png"):
@@ -448,7 +433,7 @@ def plot_water(r: dict, filename: str = "images/water_temps.png"):
  
  
 # -----------------------------------------------------------------------------
-# 5e. ENERGY + CO₂ MONTHLY
+# 4e. ENERGY + CO₂ MONTHLY
 # -----------------------------------------------------------------------------
  
 def plot_energy_monthly(r: dict, filename: str = "images/energy_monthly.png"):
@@ -497,7 +482,7 @@ def plot_energy_monthly(r: dict, filename: str = "images/energy_monthly.png"):
  
  
 # -----------------------------------------------------------------------------
-# 5f. COMFORT TIERS MONTHLY
+# 4f. COMFORT TIERS MONTHLY
 # -----------------------------------------------------------------------------
  
 def _monthly_tier_pct(
@@ -576,7 +561,7 @@ def plot_comfort_monthly(r: dict, filename: str = "images/comfort_monthly.png"):
  
  
 # -----------------------------------------------------------------------------
-# 5g. DISPATCHER
+# 4g. DISPATCHER
 # -----------------------------------------------------------------------------
  
 def plot_results(r: dict):
@@ -590,7 +575,7 @@ def plot_results(r: dict):
 
 
 # -----------------------------------------------------------------------------
-# 6. MAIN
+# 5. MAIN
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":

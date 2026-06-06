@@ -10,7 +10,7 @@ import pandas as pd
 from constants import (
     UA_FACADE_W_K, UA_TUN_WALL_W_K, UA_SOIL_W_K, RHO_CP_AIR_J_M3_K,
     T_SOIL_C, T_TUN_OFFSET_DAY_C, T_TUN_OFFSET_NIGHT_C,
-    C_TOTAL_J_K,
+    C_TOTAL_J_K, 
     AIRFLOW_MIN_M3H, AIRFLOW_MAX_M3H, AIRFLOW_PER_PERSON_M3H, AIRFLOW_OVERPRESSURE_M3H,
     Q_STAIR_M3S, T_STAIR_COLD_C, F_STAIR_COLD, F_STAIR_NIGHT,
     Q_CURTAIN_AIR_M3S, DT_JET_K, ETA_IN_CURTAIN,
@@ -18,12 +18,14 @@ from constants import (
     T_DEAD_LOW_C, T_DEAD_HIGH_C,
     T_COOL_FIXED_C, T_COOL_DELTA_C, T_EXT_DELTA_C,
     T_BLOW_HEAT_C, T_BLOW_COOL_C, T_NIGHT_SETBACK_C,
+    T_MILD_LOW ,
     PEOPLE_PEAK,
     T_HW_EXT_LOW_C, T_HW_EXT_HIGH_C, T_HW_EXT_HYST_C, T_HW_SUPPLY_MAX, T_HW_SUPPLY_MIN,
     T_CW_EXT_LOW_C, T_CW_EXT_HYST_C, T_CW_SUPPLY_C,
     FRAC_RETURN_AIR, CP_GLYCOL_J_KG_K, RHO_GLYCOL_KG_M3, DT_WATER_HEAT_K, DT_WATER_COOL_K,
 )
 from occupancy import v_inf_m3s, _day_type
+
 
 
 # -----------------------------------------------------------------------------
@@ -38,6 +40,21 @@ from occupancy import v_inf_m3s, _day_type
 #   22 < T_ext ≤ 32°C  → 26°C
 #   T_ext > 32°C       → min(27, T_ext − 6)
 # endregion
+
+PREHEAT_STRATEGY = "none"  # "none" | "setback_override" | "hc"
+
+def T_setpoint_preheat(T_ext: float, hour: int, month: int) -> float:
+    """T_set with optional pre-heat override during winter HC hours."""
+    if month in [1, 2, 3, 10, 11, 12]:
+        if PREHEAT_STRATEGY == "setback_override" and 1 <= hour < 5:
+            return 15 # 18°C during night hours instead of anti-freeze at 5°C
+        elif PREHEAT_STRATEGY == "hc" and (hour >= 22 or hour == 5):
+            return T_HEAT_HIGH_C  # 18°C during HC hours instead of anti-freeze at 5°C
+        else:
+            return T_setpoint(T_ext, hour)
+    else:
+        return T_setpoint(T_ext, hour)
+
 
 def T_setpoint(T_ext: float, hour: int = 12) -> float:
     """T_set [°C] from T_ext [°C] and hour. Returns np.nan in dead band.
@@ -151,7 +168,7 @@ def dT_dt(
         Q_curtain_zone = ETA_IN_CURTAIN * P_heat_curtain
 
     # HVAC
-    T_set     = T_setpoint(T_ext, hour)
+    T_set     = T_setpoint_preheat(T_ext, hour, ts.month)
     Q_air_m3s = airflow_total(n_ppl) / 3600.0
 
     T_hw = T_hot_water_supply(T_ext, water_state["heating"])
@@ -261,7 +278,7 @@ def build_Q_hvac_array(
             zip(T_in_array, T_ext_array, n_people_array, dates)):
 
         hour      = ts.hour
-        T_set     = T_setpoint(T_ext, hour)
+        T_set     = T_setpoint_preheat(T_ext, hour, ts.month)
         Q_air_m3s = airflow_total(n_ppl) / 3600.0
         T_mix     = FRAC_RETURN_AIR * T_in + (1.0 - FRAC_RETURN_AIR) * T_ext
 

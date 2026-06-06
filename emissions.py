@@ -17,7 +17,42 @@ from constants import (
 
 
 # -----------------------------------------------------------------------------
-# 1. RTE CO₂ INTENSITY  — load and align to simulation DatetimeIndex
+# 1. HOROSAISONNIER TARIFF  — Tarif Jaune BT > 36 kVA, Courte Utilisation 2025
+# -----------------------------------------------------------------------------
+# Winter: Nov 1 – Mar 31.  Summer: Apr 1 – Oct 31.
+# HC: 22h–06h Mon–Sat, all day Sunday.  HP: everything else.
+
+TARIF_HPH = 0.215   # €/kWh HT — Heures Pleines Hiver
+TARIF_HCH = 0.155   # €/kWh HT — Heures Creuses Hiver
+TARIF_HPE = 0.118   # €/kWh HT — Heures Pleines Été
+TARIF_HCE = 0.097   # €/kWh HT — Heures Creuses Été
+
+
+def get_hourly_price(dates: pd.DatetimeIndex, flat: bool = False) -> np.ndarray:
+    """
+    Return €/kWh for each timestep.
+    flat=True  → constant ELEC_PRICE_EUR_KWH (old behavior).
+    flat=False → horosaisonnier 4-period tariff.
+    """
+    if flat:
+        return np.full(len(dates), ELEC_PRICE_EUR_KWH)
+
+    month = dates.month
+    hour  = dates.hour
+    dow   = dates.dayofweek          # 0=Mon, 6=Sun
+
+    is_winter = (month >= 11) | (month <= 3)
+    is_hc     = (dow == 6) | (hour >= 22) | (hour < 6)
+
+    return np.where(
+        is_winter,
+        np.where(is_hc, TARIF_HCH, TARIF_HPH),
+        np.where(is_hc, TARIF_HCE, TARIF_HPE),
+    )
+
+
+# -----------------------------------------------------------------------------
+# 2. RTE CO₂ INTENSITY  — load and align to simulation DatetimeIndex
 # -----------------------------------------------------------------------------
 
 def load_co2_intensity(rte_path: str, dates: pd.DatetimeIndex) -> np.ndarray:
@@ -42,7 +77,7 @@ def load_co2_intensity(rte_path: str, dates: pd.DatetimeIndex) -> np.ndarray:
 
 
 # -----------------------------------------------------------------------------
-# 2. ELECTRICAL POWER  — thermal load → electrical demand
+# 3. ELECTRICAL POWER  — thermal load → electrical demand
 # -----------------------------------------------------------------------------
 
 def compute_elec_power(
@@ -99,7 +134,7 @@ def compute_elec_power(
 
 
 # -----------------------------------------------------------------------------
-# 3. ENERGY + CO₂  — integrate over time, multiply by carbon intensity
+# 4. ENERGY + CO₂ + COST  — integrate over time, apply tariff
 # -----------------------------------------------------------------------------
 
 def compute_emissions(
@@ -111,11 +146,16 @@ def compute_emissions(
     co2_intensity: np.ndarray,
     T_ext_array: np.ndarray,
     T_hw_arr: np.ndarray,
+    dates: pd.DatetimeIndex = None,
+    flat_tariff: bool = False,
     dt_s: float = 3600.0,
 ) -> dict:
     """
-    Full emissions pipeline. Returns dict with energy [kWh] and CO₂ [kgCO₂]
-    arrays (per timestep) and annual totals.
+    Full emissions pipeline. Returns dict with energy [kWh], CO₂ [kgCO₂],
+    and cost [€] arrays (per timestep) and annual totals.
+
+    Tariff: horosaisonnier by default (4-period: HPH/HCH/HPE/HCE).
+    Pass flat_tariff=True for constant ELEC_PRICE_EUR_KWH (old behavior).
     """
     P_heat, P_cool, P_fan, P_curtain = compute_elec_power(
         Q_heat, Q_cool, Q_vent, Q_air_m3s_arr, curtain_on,
@@ -136,6 +176,18 @@ def compute_emissions(
     CO2_curtain = E_curtain * co2_intensity / 1000.0
     CO2_total   = E_total   * co2_intensity / 1000.0
 
+    # --- Hourly tariff ---
+    if dates is not None:
+        price = get_hourly_price(dates, flat=flat_tariff)
+    else:
+        price = np.full(len(E_total), ELEC_PRICE_EUR_KWH)
+
+    cost_heat    = E_heat    * price
+    cost_cool    = E_cool    * price
+    cost_fan     = E_fan     * price
+    cost_curtain = E_curtain * price
+    cost_total   = E_total   * price
+
     return {
         "P_heat_W":    P_heat,
         "P_cool_W":    P_cool,
@@ -151,15 +203,21 @@ def compute_emissions(
         "CO2_fan_kg":     CO2_fan,
         "CO2_curtain_kg": CO2_curtain,
         "CO2_total_kg":   CO2_total,
+        "price_eur_kwh":   price,
+        "cost_heat_eur_ts":    cost_heat,
+        "cost_cool_eur_ts":    cost_cool,
+        "cost_fan_eur_ts":     cost_fan,
+        "cost_curtain_eur_ts": cost_curtain,
+        "cost_total_eur_ts":   cost_total,
         "E_heat_total_kWh":    E_heat.sum(),
         "E_cool_total_kWh":    E_cool.sum(),
         "E_fan_total_kWh":     E_fan.sum(),
         "E_curtain_total_kWh": E_curtain.sum(),
         "E_annual_kWh":        E_total.sum(),
         "CO2_annual_kgCO2":    CO2_total.sum(),
-        "cost_annual_eur": E_total.sum() * ELEC_PRICE_EUR_KWH,
-        "cost_heat_eur":   E_heat.sum()  * ELEC_PRICE_EUR_KWH,
-        "cost_cool_eur":   E_cool.sum()  * ELEC_PRICE_EUR_KWH,
-        "cost_fan_eur":    E_fan.sum()   * ELEC_PRICE_EUR_KWH,
-        "cost_curtain_eur": E_curtain.sum() * ELEC_PRICE_EUR_KWH,
+        "cost_annual_eur":   cost_total.sum(),
+        "cost_heat_eur":     cost_heat.sum(),
+        "cost_cool_eur":     cost_cool.sum(),
+        "cost_fan_eur":      cost_fan.sum(),
+        "cost_curtain_eur":  cost_curtain.sum(),
     }

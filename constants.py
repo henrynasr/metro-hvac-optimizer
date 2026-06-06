@@ -158,6 +158,8 @@ T_EXT_DELTA_C        = 32.0    # °C — above this, cooling target = T_ext − 
 T_BLOW_COOL_C        = 15.0    # °C — AHU supply, cooling mode. [ASSUMPTION] [SOBOL 13–17]
 T_BLOW_HEAT_C        = 30.0    # °C — AHU supply, heating mode. [ASSUMPTION] [SOBOL 28–35]
 T_NIGHT_SETBACK_C    =  5.0    # °C — anti-freeze setpoint during night (01h–05h)
+PREHEAT_STRATEGY = "none"        # "none" | "setback_override" | "occupied_hc"
+T_PREHEAT_C      = 20.0          # pre-heat target during HC hours [°C]
 
 # -----------------------------------------------------------------------------
 # 10. AIR PROPERTIES
@@ -184,7 +186,7 @@ T_CW_SUPPLY_C        =  8.0    # °C — fixed cold water supply
 T_CW_RETURN_C        = 13.0    # °C — fixed cold water return (must be < T_BLOW_COOL 15°C)
 
 DT_WATER_HEAT_K      = 5.0     # K — constant heating circuit ΔT (supply − return)
-DT_WATER_COOL_K      = T_CW_RETURN_C - T_CW_SUPPLY_C   # 5 K — cooling circuit ΔT
+DT_WATER_COOL_K      = 5.0   # 5 K — cooling circuit ΔT
 
 # -----------------------------------------------------------------------------
 # 12. AHU AIR MIX
@@ -218,3 +220,17 @@ COP_CURTAIN = COP_HEAT   # fallback — curtain uses same variable COP when T_hw
 P_FAN_RATED_W = AIRFLOW_MAX_M3H / 3600.0 * DP_AHU_PA / ETA_FAN       # 3564 W at 9625 m³/h
 
 ELEC_PRICE_EUR_KWH = 0.17   # €/kWh — RATP industrial tariff [ASSUMPTION]
+
+# -----------------------------------------------------------------------------
+# 15. COMFORT THRESHOLDS
+# -----------------------------------------------------------------------------
+
+T_COMFORT_LOW   = 18.0    # °C
+T_COMFORT_HIGH  = 26.0
+T_MILD_LOW      = 14.0
+T_MILD_HIGH     = 28.0
+
+RH_COMFORT_LOW  = 0.40
+RH_COMFORT_HIGH = 0.60
+RH_MILD_LOW     = 0.35
+RH_MILD_HIGH    = 0.65

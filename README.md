@@ -60,10 +60,11 @@ C · dT_in/dt = (UA_facade + UA_tun_wall + ρcp·V̇_inf)·(T_tun − T_in)
 | `occupancy.py` | RATP profiles, day-type dispatch, `v_inf_m3s` |
 | `regulation.py` | Setpoint law, staircase modulation, `dT_dt`, `build_Q_hvac_array`, water regime |
 | `simulation.py` | Full pipeline: ODE → HVAC → emissions → humidity → latent correction → comfort classification → plots |
-| `emissions.py` | Electricity, CO₂, cost — variable COP heating, cube law fans, RTE éCO2mix |
+| `emissions.py` | Electricity, CO₂, cost — variable COP heating, cube law fans, RTE éCO2mix, horosaisonnier tariff |
 | `humidity.py` | Psychrometric layer — RH_in, condensation risk, latent cooling load |
 | `sobol.py` | Sobol GSA — 15 operator params, Saltelli N=512, 3 metrics (cost, comfort, CO₂) |
 | `pareto.py` | Pareto sweep — 6 levers, 1,296 configs, cost vs combined discomfort |
+| `preheat_compare.py` | Pre-heat strategy comparison — none / setback_override / hc, vs baseline |
 | `compare.py` | Baseline vs Pareto-optimal — side-by-side comparison |
 | `utils.py` | `load_data`, `style_axes` |
 | `docs/parameters.md` | Full parameter table — values, sources, derivations |
@@ -136,24 +137,41 @@ Optimal config: H=16, A/pp=18, HW=40, Stair=7, Hyst=13, Blow=28.
 **Humidity:** comfort 40–60%, mild 35–40% or 60–65%, discomfort <35% or >65%.
 **Combined:** comfort = both OK, discomfort = at least one bad, mild = everything else.
 
+### Pre-heating under time-of-use pricing (no viable load-shift)
+
+Tested whether banking heat in the concrete mass during cheap HC hours (winter night, 0.155 €/kWh) reduces the expensive morning HP load (0.215 €/kWh). Two strategies vs baseline (`preheat_compare.py`):
+
+- **Night setback override** (01h–05h heated to 15 above anti-freeze): slightly worse on both energy and cost.
+- **Occupied HC boost** (overshoot to 20°C during 22h–06h): **+1.1% energy, +0.6% cost** — strictly worse.
+
+**Finding: no load-shifting opportunity exists on this geometry.** Any target above the zone's natural overnight drift (~13–14°C) costs more energy and more money — the heat is lost before the morning peak. The τ=35h thermal mass is real but the staircase infiltration and ventilation losses dominate it, so the mass is not a usable thermal battery. Pre-heating chapter closed; `PREHEAT_STRATEGY = "none"` retained as baseline. The strategy apparatus stays in `regulation.py` (`T_setpoint_preheat`) as the tested-and-rejected lever.
+
+Note: switching from flat 0.17 €/kWh to horosaisonnier moved annual cost only +1.1% (4,520€ → 4,570€), confirming current consumption is not aligned with — nor exploitable by — the price signal.
+
 ---
 
 ## Known limitations
 
 - Night window 23h–01h modeled as off-peak (4 min headway). Real last trains run ~15 min intervals.
 - Air curtain 60% heat spill outside is lost, not recovered.
-- Electricity price fixed at 0.17 €/kWh. Real RATP contract is time-of-use (heures pleines/creuses).
+- Electricity tariff is horosaisonnier (Tarif Jaune proxy: HPH/HCH/HPE/HCE). HC window 22h–06h Mon–Sat assumed (Enedis sets it locally, not published generically).
 - Coil contact factor = 1.0 (all air touches fins). Overestimates dehumidification ~10-20%.
-- Pareto and Sobol use monkey-patching (`setattr` on module namespaces). Functional but brittle.
 
 ---
 
 ## Status
 
+**Week 6 — 2026-06-06.** Time-of-use pricing + pre-heating analysis.
+- `emissions.py`: horosaisonnier tariff (Tarif Jaune proxy — HPH/HCH/HPE/HCE), `get_hourly_price()`, per-timestep cost. Flat→ToU moved annual cost only +1.1%.
+- `regulation.py`: `T_setpoint_preheat()` wrapper, `PREHEAT_STRATEGY` lever (none / setback_override / hc). Pre-heat target during winter HC hours.
+- `preheat_compare.py`: 3-strategy annual comparison via monkey-patch.
+- **Finding: no viable pre-heating on this geometry.** Both strategies break even or lose (-0.1% to +1.1% energy). Infiltration-dominated zone — thermal mass not a usable battery. Chapter closed, `PREHEAT_STRATEGY = "none"` baseline.
+- Next: TBD — options open (FDD stub, Monte Carlo on occupancy, SQL + Streamlit).
+
+### Earlier
 **Week 5 — 2026-05-30.** Sobol GSA + Pareto + comparison pipeline complete.
 - `simulation.py` replaces `thermal_model.py`: full pipeline with humidity, latent correction, 3-tier comfort classification, 6 plot outputs.
 - Sobol GSA: 15 operator params, N=512, 16,384 runs (8.6h). T_HEAT_LOW_C dominates cost (S1=0.86). Comfort is non-additive.
 - Pareto: 6 levers, 1,296 configs, 84 non-dominated. Optimal: H=16, A=18, HW=40 → 2,986€/year.
 - `compare.py`: baseline vs optimal side-by-side. -1,534€/year (-34%), +5.1pp discomfort.
 - Deleted: `sweep.py` (superseded), `sobol_A.py`, `sobol_B.py` (replaced by unified `sobol.py`).
-- Next: time-of-use pricing (HP/HC) + thermal pre-heating strategy.
