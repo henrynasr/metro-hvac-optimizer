@@ -9,7 +9,7 @@ Built on public data only. No proprietary files.
 
 Models the thermal dynamics of one buried platform zone using a lumped-capacitance ODE driven by real Paris weather (Open-Meteo ERA5) and real RATP occupancy data. The regulation layer replicates a real AHU control strategy: 5-zone setpoint law, airflow modulation with heating/cooling boost, water circuit scheduling, hysteresis logic, night setback, and staircase air curtain. A full-year humidity layer computes indoor RH, condensation risk, and latent cooling load.
 
-A Sobol global sensitivity analysis (15 operator parameters, 16,384 runs) identifies the levers that matter. A Pareto front (6 levers, 1,296 configs) maps the cost-vs-comfort trade-off. A comparison script shows the before/after of the Pareto-optimal configuration.
+A Sobol global sensitivity analysis (15 operator parameters, 16,384 runs) identifies the levers that matter. A Pareto front (6 levers, 1,296 configs) maps the cost-vs-comfort trade-off. A comparison script shows the before/after of the Pareto-optimal configuration. An FDD stub detects sensor drift in streaming mode.
 
 **ODE:**
 
@@ -66,6 +66,7 @@ C · dT_in/dt = (UA_facade + UA_tun_wall + ρcp·V̇_inf)·(T_tun − T_in)
 | `pareto.py` | Pareto sweep — 6 levers, 1,296 configs, cost vs combined discomfort |
 | `preheat_compare.py` | Pre-heat strategy comparison — none / setback_override / hc, vs baseline |
 | `compare.py` | Baseline vs Pareto-optimal — side-by-side comparison |
+| `fdd.py` | FDD stub — streaming two-sided CUSUM detector for T_ext sensor drift, hour-by-hour replay |
 | `utils.py` | `load_data`, `style_axes` |
 | `docs/parameters.md` | Full parameter table — values, sources, derivations |
 
@@ -84,6 +85,7 @@ python simulation.py            # baseline annual run + plots (~2 min)
 python compare.py               # baseline vs optimal (~4 min)
 python pareto.py                # 1,296 configs (~43 min)
 python sobol.py                 # 16,384 configs (~9 hours)
+python fdd.py                   # sensor drift detection (~30 min)
 ```
 
 ---
@@ -148,6 +150,18 @@ Tested whether banking heat in the concrete mass during cheap HC hours (winter n
 
 Note: switching from flat 0.17 €/kWh to horosaisonnier moved annual cost only +1.1% (4,520€ → 4,570€), confirming current consumption is not aligned with — nor exploitable by — the price signal.
 
+### FDD — T_ext sensor drift detection (streaming CUSUM)
+
+`fdd.py` replays the year hour-by-hour. Each hour: solve the ODE one step on the corrupted T_ext, compare predicted T_in to the true T_in (simulated from clean weather as a proxy for the wall probe). Two-sided CUSUM on the residual. Loop halts the instant the alarm fires — same code runs on a live sensor stream unchanged.
+
+**Result:** +2°C step bias on T_ext after July 1 caught in **22 hours**, zero false alarms pre-fault.
+
+**Why detection isn't instant:** in summer dead-band, a +2°C T_ext bias only shifts predicted T_in by ~0.2°C per hour — thermal mass, soil coupling, and tunnel terms absorb most of it. The residual is genuinely small in July. Slack k=0.05°C is calibrated to that signal; k=0.5°C (coarse) pushed detection to 43 days.
+
+**Known limitation:** detection-only. A single T_in residual can't tell you whether T_ext, T_in, or the energy meter drifted — they all affect the same signal. Fault isolation (identifying *which* sensor) requires redundancy or multi-residual analysis. Stated as future work.
+
+**Modelling approximation:** `dT_dt` uses one T_ext for both thermal physics and the setpoint law. Ideally the faulty probe would corrupt control decisions only, while true T_ext drives the physics. Splitting them would require restructuring the ODE — kept single-stream, documented.
+
 ---
 
 ## Known limitations
@@ -156,17 +170,19 @@ Note: switching from flat 0.17 €/kWh to horosaisonnier moved annual cost only 
 - Air curtain 60% heat spill outside is lost, not recovered.
 - Electricity tariff is horosaisonnier (Tarif Jaune proxy: HPH/HCH/HPE/HCE). HC window 22h–06h Mon–Sat assumed (Enedis sets it locally, not published generically).
 - Coil contact factor = 1.0 (all air touches fins). Overestimates dehumidification ~10-20%.
+- FDD: single residual cannot isolate which sensor drifted. Isolation layer is future work.
 
 ---
 
 ## Status
 
-**Week 6 — 2026-06-06.** Time-of-use pricing + pre-heating analysis.
+**Week 6 — 2026-06-06/07.** Time-of-use pricing + pre-heating analysis + FDD stub.
 - `emissions.py`: horosaisonnier tariff (Tarif Jaune proxy — HPH/HCH/HPE/HCE), `get_hourly_price()`, per-timestep cost. Flat→ToU moved annual cost only +1.1%.
 - `regulation.py`: `T_setpoint_preheat()` wrapper, `PREHEAT_STRATEGY` lever (none / setback_override / hc). Pre-heat target during winter HC hours.
 - `preheat_compare.py`: 3-strategy annual comparison via monkey-patch.
 - **Finding: no viable pre-heating on this geometry.** Both strategies break even or lose (-0.1% to +1.1% energy). Infiltration-dominated zone — thermal mass not a usable battery. Chapter closed, `PREHEAT_STRATEGY = "none"` baseline.
-- Next: TBD — options open (FDD stub, Monte Carlo on occupancy, SQL + Streamlit).
+- `fdd.py`: streaming two-sided CUSUM on T_in residual. +2°C T_ext bias after July 1 caught in **22 hours**, zero false alarms. k=0.05, h=3. Detection-only — isolation deferred.
+- Next: TBD — Monte Carlo on occupancy, SQL + Streamlit, or fault isolation layer.
 
 ### Earlier
 **Week 5 — 2026-05-30.** Sobol GSA + Pareto + comparison pipeline complete.
