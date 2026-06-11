@@ -8,6 +8,7 @@
 import time
 import itertools
 import numpy as np
+import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -237,6 +238,11 @@ if __name__ == "__main__":
             results.append(result)
 
     _restore_all()
+    
+    # --- Save all results ---
+    df_results = pd.DataFrame(results)
+    df_results.to_csv("data/processed/pareto_all_configs.csv", index=False)
+    print(f"Saved: data/processed/pareto_all_configs.csv ({len(df_results)} rows)")
 
     elapsed = time.perf_counter() - t0
     print(f"\nCompleted {len(results)}/{N_CONFIGS} in {elapsed/60:.1f} min "
